@@ -369,6 +369,10 @@ dialog h2{margin-bottom:.4rem}
 .del svg{width:17px;height:17px}
 .del:hover{opacity:1;color:var(--out)}
 .del.sure{opacity:1;background:var(--out);color:#fff;font-weight:600;font-size:.86rem;padding:.2rem .5rem;white-space:nowrap}
+.trava{position:fixed;inset:0;z-index:50;background:var(--bg);display:grid;place-items:center;padding:1rem;overflow:auto}
+.tv-cx{width:min(24rem,100%);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1.5rem}
+.tv-cx h2{margin-bottom:.5rem}
+.field input[type=password]{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:.55rem .7rem;min-height:2.8rem;font-size:1.1rem}
 </style>
 </head>
 <body>
@@ -395,39 +399,100 @@ dialog h2{margin-bottom:.4rem}
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script>
-/* Versão independente: os dados ficam guardados neste navegador (localStorage). */
+/* Versão independente: os dados ficam neste navegador (localStorage). Com senha, ficam cifrados (AES-GCM, chave derivada da senha por PBKDF2). */
 (function(){
-  var PRE='fin:';
-  function ler(id){try{var v=window.localStorage.getItem(PRE+id);return v?JSON.parse(v):null}catch(e){return null}}
-  function ids(){var o=[];try{for(var i=0;i<window.localStorage.length;i++){var k=window.localStorage.key(i);if(k&&k.indexOf(PRE)===0)o.push(k.slice(PRE.length))}}catch(e){}return o.sort()}
+  var PRE='fin:',META='finsec:meta',ITER=250000,MINUTOS=10,chave=null,LS=window.localStorage,te=new TextEncoder(),td=new TextDecoder();
+  function b64(buf){var s='',a=new Uint8Array(buf);for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)}
+  function ub64(s){var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+  function meta(){try{return JSON.parse(LS.getItem(META))}catch(e){return null}}
+  function ids(){var o=[];try{for(var i=0;i<LS.length;i++){var k=LS.key(i);if(k&&k.indexOf(PRE)===0)o.push(k.slice(PRE.length))}}catch(e){}return o.sort()}
+  function deriva(senha,salt,iter){return crypto.subtle.importKey('raw',te.encode(senha),'PBKDF2',false,['deriveKey']).then(function(k){
+    return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])})}
+  function cifra(k,obj){var iv=crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.encrypt({name:'AES-GCM',iv:iv},k,te.encode(JSON.stringify(obj))).then(function(ct){return JSON.stringify({enc:1,iv:b64(iv),ct:b64(ct)})})}
+  function decifra(k,str){var o=JSON.parse(str);if(!o||o.enc!==1)return Promise.resolve(o);
+    return crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(o.iv)},k,ub64(o.ct)).then(function(pt){return JSON.parse(td.decode(pt))})}
+  function ler(id,k){var v=LS.getItem(PRE+id);if(!v)return Promise.resolve(null);k=k===undefined?chave:k;return k?decifra(k,v):Promise.resolve(JSON.parse(v))}
+  function gravar(id,d,k){k=k===undefined?chave:k;return (k?cifra(k,d):Promise.resolve(JSON.stringify(d))).then(function(s){LS.setItem(PRE+id,s)})}
+  function todos(k){var l=ids();return Promise.all(l.map(function(id){return ler(id,k)})).then(function(v){var o={};l.forEach(function(id,i){o[id]=v[i]});return o})}
   var db={collection:function(){return {
-    get:function(){return Promise.resolve({docs:ids().map(function(id){var v=ler(id);return {id:id,exists:true,data:function(){return v}}})})},
+    get:function(){return todos().then(function(o){return {docs:Object.keys(o).map(function(id){return {id:id,exists:true,data:function(){return o[id]}}})}})},
     doc:function(id){return {
-      get:function(){var v=ler(id);return Promise.resolve({id:id,exists:!!v,data:function(){return v}})},
-      set:function(d){try{window.localStorage.setItem(PRE+id,JSON.stringify(d));return Promise.resolve()}catch(e){return Promise.reject(e)}}}}}}};
+      get:function(){return ler(id).then(function(v){return {id:id,exists:!!v,data:function(){return v}}})},
+      set:function(d){return gravar(id,d)}}}}}};
+  var liberar,liberado=new Promise(function(r){liberar=r});
   window.claude={use:function(n){
     if(n==='user')return Promise.resolve({id:function(){return Promise.resolve('local')}});
-    if(n==='db')return Promise.resolve(db);
+    if(n==='db')return liberado.then(function(){return db});
     return Promise.resolve(null)}};
-  window.finBackup={
-    exportar:function(){var o={};ids().forEach(function(id){o[id]=ler(id)});
-      var a=document.createElement('a'),d=new Date();a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));
-      a.download='financeiro-backup-'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'.json';document.body.appendChild(a);a.click();a.remove()},
-    importar:function(file,aviso){var r=new FileReader();
-      r.onload=function(){try{var o=JSON.parse(r.result),n=0;
-          Object.keys(o).forEach(function(id){if((id==='config'||/^m-\d{4}-\d{2}$/.test(id))&&o[id]&&typeof o[id]==='object'){window.localStorage.setItem(PRE+id,JSON.stringify(o[id]));n++}});
-          if(!n)throw new Error('vazio');window.location.reload()}
-        catch(e){aviso('Este arquivo não é um backup do Financeiro. Nada foi alterado.')}};
-      r.onerror=function(){aviso('Não foi possível ler o arquivo.')};r.readAsText(file)}
-  };
+
+  /* painel de senha */
+  function painel(o){
+    var d=document.createElement('div');d.className='trava';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-labelledby','tv-t');
+    var h='<div class="tv-cx"><h2 id="tv-t">'+o.titulo+'</h2>'+(o.texto?'<p class="hint" style="margin:0 0 1rem">'+o.texto+'</p>':'');
+    o.campos.forEach(function(c,i){h+='<div class="field"><label for="tv-'+i+'">'+c+'</label><input type="password" id="tv-'+i+'" autocomplete="new-password" autocapitalize="off" spellcheck="false"></div>'});
+    h+='<div class="err" id="tv-err" role="alert"></div><div class="dlgbtns"><button class="primary" id="tv-ok">'+o.botao+'</button>'+(o.cancelar?'<button class="ghost" id="tv-no">Cancelar</button>':'')+'</div></div>';
+    d.innerHTML=h;document.body.appendChild(d);
+    var ins=d.querySelectorAll('input'),err=d.querySelector('#tv-err'),ok=d.querySelector('#tv-ok'),ocupado=false;
+    var fechar=function(){d.remove()},erro=function(t){ocupado=false;ok.disabled=false;err.textContent=t;ins[0].focus();ins[0].select()};
+    var vai=function(){if(ocupado)return;ocupado=true;ok.disabled=true;err.textContent='';o.ok([].map.call(ins,function(x){return x.value}),erro,fechar)};
+    ok.addEventListener('click',vai);d.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();vai()}if(e.key==='Escape'&&o.cancelar)fechar()});
+    if(o.cancelar)d.querySelector('#tv-no').addEventListener('click',fechar);
+    ins[0].focus();
+  }
+  function confere(senha){var m=meta();return deriva(senha,ub64(m.salt),m.iter).then(function(k){return decifra(k,m.check).then(function(){return k})})}
+  function novaChave(senha){var salt=crypto.getRandomValues(new Uint8Array(16));return deriva(senha,salt,ITER).then(function(k){return cifra(k,{ok:1}).then(function(ck){return {k:k,meta:{v:1,salt:b64(salt),iter:ITER,check:ck}}})})}
+  function regrava(dados,k){return Object.keys(dados).reduce(function(p,id){return p.then(function(){return gravar(id,dados[id],k)})},Promise.resolve())}
+  function valida(a,b){if(a.length<4)return 'A senha precisa ter pelo menos 4 caracteres.';if(a!==b)return 'As duas senhas não são iguais.';return ''}
+  function destravar(){
+    painel({titulo:'Financeiro',texto:'Digite a senha para abrir.',campos:['Senha'],botao:'Entrar',ok:function(v,erro,fechar){
+      confere(v[0]).then(function(k){chave=k;fechar();rodape();vigia();liberar()}).catch(function(){erro('Senha incorreta.')})}});
+  }
+  function criarSenha(){
+    painel({titulo:'Criar senha',texto:'A senha vale só para este navegador. Se você esquecer, não há como recuperar os dados: guarde um backup em lugar seguro.',campos:['Nova senha','Repita a senha'],botao:'Criar senha',cancelar:true,ok:function(v,erro,fechar){
+      var e=valida(v[0],v[1]);if(e)return erro(e);
+      todos(null).then(function(dados){return novaChave(v[0]).then(function(n){return regrava(dados,n.k).then(function(){LS.setItem(META,JSON.stringify(n.meta));chave=n.k})})})
+        .then(function(){fechar();rodape('Senha criada. Ela será pedida sempre que o site for aberto.');vigia()}).catch(function(){erro('Não foi possível criar a senha.')})}});
+  }
+  function alterarSenha(){
+    painel({titulo:'Alterar senha',campos:['Senha atual','Nova senha','Repita a nova senha'],botao:'Alterar senha',cancelar:true,ok:function(v,erro,fechar){
+      var e=valida(v[1],v[2]);if(e)return erro(e);
+      confere(v[0]).then(function(kOld){return todos(kOld).then(function(dados){return novaChave(v[1]).then(function(n){return regrava(dados,n.k).then(function(){LS.setItem(META,JSON.stringify(n.meta));chave=n.k})})})},function(){throw 'senha'})
+        .then(function(){fechar();rodape('Senha alterada.')}).catch(function(x){erro(x==='senha'?'Senha atual incorreta.':'Não foi possível alterar a senha.')})}});
+  }
+  function removerSenha(){
+    painel({titulo:'Remover senha',texto:'Sem senha, qualquer pessoa que abrir o site neste navegador vê os lançamentos.',campos:['Senha atual'],botao:'Remover senha',cancelar:true,ok:function(v,erro,fechar){
+      confere(v[0]).then(function(k){return todos(k).then(function(dados){return regrava(dados,null).then(function(){LS.removeItem(META);chave=null})})},function(){throw 'senha'})
+        .then(function(){fechar();rodape('Senha removida.')}).catch(function(x){erro(x==='senha'?'Senha incorreta.':'Não foi possível remover a senha.')})}});
+  }
+  var tempo=null;
+  function vigia(){if(!meta())return;var arma=function(){clearTimeout(tempo);tempo=setTimeout(function(){if(meta())window.location.reload()},MINUTOS*60000)};
+    if(!vigia.on){vigia.on=true;['pointerdown','keydown','scroll'].forEach(function(ev){window.addEventListener(ev,arma,{passive:true})})}arma()}
+
+  /* rodapé: backup e senha */
+  function rodape(aviso){
+    var f=document.querySelector('footer.bk');if(!f){f=document.createElement('footer');f.className='bk';document.body.insertBefore(f,document.getElementById('dlg'))}
+    var tem=!!meta();
+    f.innerHTML='<p id="bk-msg">'+(aviso||(tem?'Protegido por senha. Os dados ficam guardados só neste navegador e o site trava após '+MINUTOS+' minutos sem uso.':'Os dados ficam guardados só neste navegador. Exporte um backup de vez em quando.'))+'</p><div>'+
+      '<button class="ghost" data-bk="exp">Exportar backup</button><button class="ghost" data-bk="imp">Importar backup</button>'+
+      (tem?'<button class="ghost" data-bk="trava">Bloquear agora</button><button class="ghost" data-bk="muda">Alterar senha</button><button class="ghost" data-bk="tira">Remover senha</button>':'<button class="ghost" data-bk="cria">Criar senha</button>')+
+      '<input type="file" id="bk-file" accept="application/json,.json" hidden></div>';
+    f.querySelector('#bk-file').addEventListener('change',function(e){var a=e.target.files[0];if(a)importar(a)});
+  }
+  function msg(t){var m=document.getElementById('bk-msg');if(m){m.textContent=t;m.style.color='var(--out)'}}
+  function exportar(){todos().then(function(o){var a=document.createElement('a'),d=new Date();a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));
+    a.download='financeiro-backup-'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'.json';document.body.appendChild(a);a.click();a.remove()}).catch(function(){msg('Não foi possível exportar.')})}
+  function importar(file){var r=new FileReader();
+    r.onload=function(){var o,validos={};try{o=JSON.parse(r.result)}catch(e){o=null}
+      if(o)Object.keys(o).forEach(function(id){if((id==='config'||/^m-\d{4}-\d{2}$/.test(id))&&o[id]&&typeof o[id]==='object'&&o[id].enc!==1)validos[id]=o[id]});
+      if(!Object.keys(validos).length){msg('Este arquivo não é um backup do Financeiro. Nada foi alterado.');return}
+      regrava(validos).then(function(){window.location.reload()}).catch(function(){msg('Não foi possível importar.')})};
+    r.onerror=function(){msg('Não foi possível ler o arquivo.')};r.readAsText(file)}
+  document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-bk]');if(!t)return;var a=t.dataset.bk;
+    if(a==='exp')exportar();else if(a==='imp')document.getElementById('bk-file').click();else if(a==='cria')criarSenha();else if(a==='muda')alterarSenha();else if(a==='tira')removerSenha();else if(a==='trava')window.location.reload()});
   document.addEventListener('DOMContentLoaded',function(){
-    var f=document.createElement('footer');f.className='bk';
-    f.innerHTML='<p id="bk-msg">Os dados ficam guardados só neste navegador. Exporte um backup de vez em quando.</p><div><button class="ghost" id="bk-exp">Exportar backup</button><button class="ghost" id="bk-imp">Importar backup</button><input type="file" id="bk-file" accept="application/json,.json" hidden></div>';
-    document.body.insertBefore(f,document.getElementById('dlg'));
-    var msg=function(t){var m=document.getElementById('bk-msg');m.textContent=t;m.style.color='var(--out)'};
-    document.getElementById('bk-exp').addEventListener('click',function(){window.finBackup.exportar()});
-    document.getElementById('bk-imp').addEventListener('click',function(){document.getElementById('bk-file').click()});
-    document.getElementById('bk-file').addEventListener('change',function(e){var a=e.target.files[0];if(a)window.finBackup.importar(a,msg)});
+    if(meta()){if(!(window.crypto&&crypto.subtle)){document.body.insertAdjacentHTML('beforeend','<div class="trava"><div class="tv-cx"><h2>Financeiro</h2><p>Este navegador não permite abrir os dados protegidos por senha. Abra o site pelo endereço https.</p></div></div>');return}destravar()}
+    else{rodape();liberar()}
   });
 })();
 </script>
@@ -499,6 +564,10 @@ function mesesOpts(sel,vazio){var ini=ymAdd(HOJE_YM,-6),h=vazio?'<option value="
   if(sel&&l.indexOf(sel)<0)l.unshift(sel);l.forEach(function(m){h+='<option value="'+m+'"'+(m===sel?' selected':'')+'>'+ymLabel(m)+'</option>'});return h}
 var ICNOTA='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm3 5v2h10V8zm0 4v2h7v-2z"/></svg>';
 function notaHTML(it){return it&&it.obs?'<span class="obs" title="'+esc(it.obs)+'" role="img" aria-label="Tem anotação: '+esc(it.obs)+'">'+ICNOTA+'</span>':''}
+function anaCampos(ctx,ana){
+  return '<div class="field"><span class="lab">Dividir com a Ana?</span>'+seg(ctx+'-ana',[['0','Não'],['1','Sim']],ana?'1':'0')+
+    '<div id="'+ctx+'-anabox" style="margin-top:.5rem"'+(ana?'':' hidden')+'>'+seg(ctx+'-anav',[['metade','Metade do valor'],['total','Valor total']],ana==='total'?'total':'metade')+
+    '<p class="hint">A parte dela entra sozinha em "Ana, a receber", em cada mês em que a compra aparecer.</p></div></div>'}
 function formHTML(ctx,kind,it,ym0){
   it=it||{};var h='';
   h+='<div class="valor"><span>R$</span><input id="'+ctx+'-v" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Valor" value="'+(it.v!=null?esc(Number(it.v).toFixed(2).replace('.',',')):'')+'"></div>';
@@ -517,6 +586,7 @@ function formHTML(ctx,kind,it,ym0){
     h+='<input type="hidden" id="'+ctx+'-p" value="'+p0+'">';
     h+='<p class="hint" style="margin:-.3rem 0 .8rem">O valor é o de cada parcela. As demais entram sozinhas nos meses seguintes.</p>';
     h+='<div class="field"><label class="check" style="color:var(--ink);font-size:1rem"><input type="checkbox" id="'+ctx+'-rep"'+(it.rep?' checked':'')+'> Repete todos os meses (assinatura, streaming)</label></div>';
+    h+=anaCampos(ctx,it.ana);
     if(it.rep&&it.id)h+='<div class="field"><label for="'+ctx+'-fim">Última cobrança</label><select id="'+ctx+'-fim">'+mesesOpts(it.fim||'','Sem data para acabar')+'</select></div>';
     h+='<div class="field"><label style="display:flex;gap:.5rem;align-items:center;color:var(--ink);font-weight:400;font-size:1rem"><input type="checkbox" id="'+ctx+'-x"'+(it.x?' checked':'')+'> Não somar no total da fatura</label></div>';
   }else if(kind==='prev'){
@@ -543,6 +613,7 @@ function readForm(ctx,kind){
     var cr=document.getElementById(ctx+'-rep');if(cr&&cr.checked){it.rep=true;it.n=1;it.p=1;it.s='av';it.proj=false;var fm=g('fim');if(fm)it.fim=fm}}
   if(kind==='prev'){it.t=rad('t')||'S';it.c=rad('pc')!=='0'}
   if(kind==='receber'){it.pago=rad('pg')==='1'}
+  if(kind==='card'&&rad('ana')==='1')it.ana=rad('anav')==='total'?'total':'metade';
   var dt=g('dt');if(dt)it.dt=dt;
   var ob=g('obs').trim();if(ob)it.obs=ob;
   return {it:it,novo:novo,ym:kind==='card'?g('m1'):''};
@@ -597,7 +668,7 @@ function rapidoHTML(){
   h+='<div class="field"><span class="lab">Banco</span><div class="chips">'+ops.map(function(o){return '<label><input type="radio" name="q-pg" value="'+esc(o[0])+'"'+(o[0]===pg?' checked':'')+'><span>'+esc(o[1])+'</span></label>'}).join('')+'</div></div>';
   h+='<div id="q-cardx"'+(pg.indexOf('card:')===0?'':' hidden')+'><div class="row2"><div class="field"><label for="q-n">Parcelas</label><input type="number" id="q-n" min="1" max="60" inputmode="numeric" value="1"></div>'+
     '<div class="field"><label for="q-m1">Mês da 1ª parcela</label><select id="q-m1">'+mesesOpts('','O mês da data')+'</select></div></div>'+
-    '<div class="field"><label class="check"><input type="checkbox" id="q-rep"> Repete todos os meses (assinatura, streaming)</label></div></div>';
+    '<div class="field"><label class="check"><input type="checkbox" id="q-rep"> Repete todos os meses (assinatura, streaming)</label></div>'+anaCampos('q','')+'</div>';
   h+='<div class="field"><label for="q-dt">Data</label><input type="date" id="q-dt" value="'+hojeISO()+'"><p class="hint" id="q-mes">Entra em '+esc(ymLabel(HOJE_YM))+'.</p></div>';
   h+='<div class="field"><label for="q-d">Descrição (opcional)</label><input type="text" id="q-d" list="q-dl" autocomplete="off"><datalist id="q-dl">'+Object.keys(S.hist.desp).slice(0,400).map(function(k){return '<option value="'+esc(S.hist.desp[k].d)+'">'}).join('')+'</datalist></div>';
   h+='<div class="err" id="q-err"></div><button class="primary" id="q-go">Lançar</button>';
@@ -619,7 +690,8 @@ function lancarRapido(){
   var isCard=pg.indexOf('card:')===0,ym=dt?dt.slice(0,7):HOJE_YM,kind=isCard?'card':'desp';
   var it={id:uid(),d:d||c||(isCard?'Compra no cartão':'Sem descrição'),v:Math.round(v*100)/100};
   if(isCard){var qn=Math.max(1,parseInt($('#q-n').value,10)||1),qr=$('#q-rep').checked,qm=$('#q-m1').value;if(qr)qn=1;if(qm)ym=qm;
-    it.b=pg.slice(5);it.p=1;it.n=qn;it.s=qn>1?'pa':'av';it.proj=qn>1;if(qr)it.rep=true}else{it.c=c;it.b=pg}
+    it.b=pg.slice(5);it.p=1;it.n=qn;it.s=qn>1?'pa':'av';it.proj=qn>1;if(qr)it.rep=true;
+    var qa=document.querySelector('input[name="q-ana"]:checked'),qv=document.querySelector('input[name="q-anav"]:checked');if(qa&&qa.value==='1')it.ana=(qv&&qv.value==='total')?'total':'metade'}else{it.c=c;it.b=pg}
   if(dt)it.dt=dt;
   S.busy=true;$('#q-go').disabled=true;err.textContent='';
   mutate(ym,function(doc_){doc_[KIND[kind].lista].push(it)}).then(function(){
@@ -659,7 +731,7 @@ function lrow(kind,ym,it,chips,val){
 function linha(o,comData){var it=o.it,k=o.k,chips,val,dc=comData&&o.dt?'<i class="chip">'+fmtData(o.dt)+'</i>':'';
   if(k==='desp'){chips='<i class="chip">'+esc(it.c||'Sem categoria')+'</i>'+(it.b?'<i class="chip">'+esc(it.b)+'</i>':'');val='<span class="val out">−'+brl(it.v)+'</span>'}
   else if(k==='rec'){chips='<i class="chip g">'+esc(it.t||'Receita')+'</i>';val='<span class="val in">+'+brl(it.v)+'</span>'}
-  else{chips='<i class="chip'+(NOMEC[it.b]?' '+it.b:'')+'">Cartão '+esc(it.b)+'</i>'+((it.n||1)>1?'<i class="chip">parcela '+o.p+' de '+it.n+'</i>':'')+(it.rep?'<i class="chip">todo mês</i>':'');
+  else{chips='<i class="chip'+(NOMEC[it.b]?' '+it.b:'')+'">Cartão '+esc(it.b)+'</i>'+((it.n||1)>1?'<i class="chip">parcela '+o.p+' de '+it.n+'</i>':'')+(it.rep?'<i class="chip">todo mês</i>':'')+(it.ana?'<i class="chip">Ana: '+(it.ana==='total'?'total':'metade')+'</i>':'');
     val='<span class="val">'+(it.v<0?'+'+brl(-it.v):'−'+brl(it.v))+'</span>'}
   return lrow(k,o.o,it,dc+chips,val)}
 function listaLanc(){
@@ -731,11 +803,13 @@ function renderMes(){
     h+='<div class="lfoot"><span class="muted">Saldo futuro</span><span class="num">'+brl(t.futuro)+'</span></div>'}
   else h+='<p class="empty">Sem previsões. O saldo futuro fica igual ao atual.</p>';
   h+='</section>';
-  var falta=sum(d.receber,function(x){return x.pago?0:x.v});
+  var apg=d.anaPago||{},arec=d.receber.map(function(it){return {it:it,d:it.d,v:it.v,pago:!!it.pago,pid:it.id,ed:'receber|'+ym+'|'+it.id}});
+  cardFor(ym).forEach(function(c){if(!c.it.ana)return;arec.push({card:c,d:c.it.d+((c.it.n||1)>1?' ('+c.p+'/'+c.it.n+')':''),v:c.it.ana==='total'?c.it.v:c.it.v/2,pago:!!apg[c.it.id],pid:'c:'+c.it.id,ed:'card|'+c.o+'|'+c.it.id})});
+  var falta=sum(arec,function(x){return x.pago?0:x.v});
   h+='<section class="bloco"><header><h2>Ana, a receber</h2><button class="addbtn" data-add="receber" aria-label="Adicionar item a receber">+</button></header>';
-  if(d.receber.length){h+=d.receber.map(function(it){
-      return '<div class="arow'+(it.pago?' pago':'')+'"><input type="checkbox" aria-label="Recebido: '+esc(it.d)+'" data-pago="'+esc(it.id)+'"'+(it.pago?' checked':'')+'><span class="nm" tabindex="0" data-edit="receber|'+ym+'|'+esc(it.id)+'"><b>'+esc(it.d)+'</b>'+notaHTML(it)+'</span><span class="val">'+brl(it.v)+'</span>'+delBtn('receber',ym,it)+'</div>'}).join('');
-    h+='<div class="lfoot"><span class="muted">Total <span class="num">'+brl(sum(d.receber,function(x){return x.v}))+'</span></span><span>Falta receber <span class="num">'+brl(falta)+'</span></span></div>'}
+  if(arec.length){h+=arec.map(function(r){
+      return '<div class="arow'+(r.pago?' pago':'')+'"><input type="checkbox" aria-label="Recebido: '+esc(r.d)+'" data-pago="'+esc(r.pid)+'"'+(r.pago?' checked':'')+'><span class="nm" tabindex="0" data-edit="'+esc(r.ed)+'"><b>'+esc(r.d)+'</b>'+(r.card?'<i class="chip">cartão '+esc(r.card.it.b)+', '+(r.card.it.ana==='total'?'valor total':'metade')+'</i>':notaHTML(r.it))+'</span><span class="val">'+brl(r.v)+'</span>'+(r.card?'<span></span>':delBtn('receber',ym,r.it))+'</div>'}).join('');
+    h+='<div class="lfoot"><span class="muted">Total <span class="num">'+brl(sum(arec,function(x){return x.v}))+'</span></span><span>Falta receber <span class="num">'+brl(falta)+'</span></span></div>'}
   else h+='<p class="empty">Nada a receber neste mês.</p>';
   h+='</section></aside>';
   // faturas
@@ -749,7 +823,7 @@ function renderMes(){
     if(l.length){
       h+='<div class="seg" style="margin-bottom:.4rem">'+fb('all','Tudo',st(l))+fb('av','À vista',st(av))+fb('pa','Parcelado',st(pa))+'</div>';
       h+=vis.length?'<div class="scrolly" style="max-height:17rem">'+vis.map(function(c){
-        return lrow('card',c.o,c.it,(c.it.dt?'<i class="chip">'+fmtData(c.it.dt)+'</i>':'')+((c.it.n||1)>1?'<i class="chip">parcela '+c.p+' de '+c.it.n+'</i>':'')+(c.it.rep?'<i class="chip">todo mês</i>':'')+(c.it.x?'<i class="chip w">fora do total</i>':''),'<span class="val">'+brl(c.it.v)+'</span>')}).join('')+'</div>':'<p class="empty">Nenhuma compra nesse filtro.</p>';
+        return lrow('card',c.o,c.it,(c.it.dt?'<i class="chip">'+fmtData(c.it.dt)+'</i>':'')+((c.it.n||1)>1?'<i class="chip">parcela '+c.p+' de '+c.it.n+'</i>':'')+(c.it.rep?'<i class="chip">todo mês</i>':'')+(c.it.ana?'<i class="chip">Ana: '+(c.it.ana==='total'?'total':'metade')+'</i>':'')+(c.it.x?'<i class="chip w">fora do total</i>':''),'<span class="val">'+brl(c.it.v)+'</span>')}).join('')+'</div>':'<p class="empty">Nenhuma compra nesse filtro.</p>';
       h+='<div class="lfoot"><span class="muted">'+vis.length+(vis.length>1?' compras':' compra')+(nx?', '+nx+' fora do total':'')+'</span><span class="num">'+brl(st(vis))+'</span></div>';
     }else h+='<p class="empty">Nenhuma compra neste cartão em '+esc(ymLabel(ym))+'.</p>';
     h+='</section>';
@@ -890,7 +964,7 @@ document.addEventListener('change',function(e){
   if(t.id==='n-d'||t.id==='e-d'){var ctx=t.id[0],kind=ctx==='n'?S.kind:dlg.dataset.k,h=(S.hist[kind]||{})[t.value.trim().toLowerCase()];
     if(h&&ctx==='n'){aplicaHist(ctx,kind,h)}return}
   if(t.id==='n-c'||t.id==='e-c'){var nw=document.getElementById(t.id+'new');if(nw){nw.hidden=t.value!=='__new';if(!nw.hidden)nw.focus()}return}
-  if(t.dataset&&t.dataset.pago){var id=t.dataset.pago,val=t.checked;mutate(S.ym,function(d){d.receber.forEach(function(x){if(x.id===id)x.pago=val})}).then(render).catch(function(){t.checked=!val;toast('Não foi possível salvar')});return}
+  if(t.dataset&&t.dataset.pago){var id=t.dataset.pago,val=t.checked;mutate(S.ym,function(d){if(id.indexOf('c:')===0){d.anaPago=d.anaPago||{};if(val)d.anaPago[id.slice(2)]=true;else delete d.anaPago[id.slice(2)]}else d.receber.forEach(function(x){if(x.id===id)x.pago=val})}).then(render).catch(function(){t.checked=!val;toast('Não foi possível salvar')});return}
 });
 document.addEventListener('keydown',function(e){
   if(e.key!=='Enter')return;var t=e.target;
@@ -915,6 +989,7 @@ document.addEventListener('input',function(e){
   if(e.target.id==='busca'){S.ui.q=e.target.value.trim();var l=$('#lista');if(l)l.innerHTML=listaLanc()}
 });
 document.addEventListener('change',function(e){
+  if(/-ana$/.test(e.target.name||'')){var bx=document.getElementById(e.target.name+'box');if(bx)bx.hidden=e.target.value!=='1'}
   if(e.target.id==='q-c')marcaCat();
   if(e.target.id==='q-dt'){var m=$('#q-mes');if(m)m.textContent=e.target.value?'Entra em '+ymLabel(e.target.value.slice(0,7))+'.':'Sem data: entra em '+ymLabel(HOJE_YM)+'.'}
 });
