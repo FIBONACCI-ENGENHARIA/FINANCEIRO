@@ -373,6 +373,34 @@ dialog h2{margin-bottom:.4rem}
 .tv-cx{width:min(24rem,100%);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:1.5rem}
 .tv-cx h2{margin-bottom:.5rem}
 .field input[type=password]{width:100%;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:.55rem .7rem;min-height:2.8rem;font-size:1.1rem}
+.entry.imp{max-width:58rem}
+.soltar{display:inline-flex;position:relative;cursor:pointer}
+.soltar input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}
+.soltar span{background:var(--sinal);color:var(--sinal-ink);border-radius:6px;padding:.8rem 1.4rem;font-weight:700;font-size:1.05rem}
+.soltar input:focus-visible + span{outline:2px solid var(--ink);outline-offset:2px}
+.imp-cfg{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:.4rem 1rem;align-items:end}
+.ihead{display:flex;justify-content:space-between;align-items:center;gap:1rem;padding:.6rem .2rem;border-bottom:2px solid var(--ink);margin-top:.4rem}
+.irow{display:grid;grid-template-columns:1.3rem 3rem minmax(0,1fr) auto auto;gap:.6rem;align-items:center;padding:.4rem .2rem;border-bottom:1px solid var(--line)}
+.irow.off .inome,.irow.off .val,.irow.off .idt{opacity:.45}
+.idt{font-family:var(--cond);font-size:1rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.inm{min-width:0}
+.inome{width:100%;border:1px solid transparent;background:none;border-radius:4px;padding:.3rem .4rem;font-weight:600}
+.inome:hover{border-color:var(--line)}
+.inome:focus{outline:none;border-color:var(--ink);background:var(--surface)}
+.irow select{border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:.3rem .4rem;min-height:2.2rem}
+.pdfbtn{min-height:2rem;padding:.25rem .7rem;font-size:.9rem}
+.hacoes{display:flex;gap:.5rem;align-items:center}
+.nm b.ed{display:block;margin:0}
+.rn{font:inherit;font-weight:600;width:100%;border:1px solid var(--ink);border-radius:4px;padding:.15rem .35rem;background:var(--surface);color:var(--ink)}
+.lrow,.prow,.arow{touch-action:manipulation}
+@media (max-width:759px){
+  .imp-cfg{grid-template-columns:minmax(0,1fr)}
+  .irow{grid-template-columns:1.3rem 3.2rem minmax(0,1fr) auto;grid-template-areas:"c n n n" "c d t v";row-gap:.2rem}
+  .irow select{justify-self:start;font-size:.88rem;padding:.2rem .25rem;min-height:2rem}
+  .irow .val{font-size:1.05rem}
+  .irow.fat{grid-template-areas:"c n n n" "c d d v"}
+  .irow > input[type=checkbox]{grid-area:c}.irow .inm{grid-area:n}.irow .val{grid-area:v}.irow .idt{grid-area:d;padding-left:.4rem}.irow select{grid-area:t}
+}
 </style>
 </head>
 <body>
@@ -676,10 +704,10 @@ function rapidoHTML(){
 }
 function renderRapido(){
   view.innerHTML='<div class="entry card"><h2 style="font-size:1.05rem;color:var(--ink);font-weight:800;margin:0">Novo lançamento</h2>'+rapidoHTML()+
-    '<p style="text-align:center;margin:.8rem 0 0"><button class="linkbtn" data-modo="completo">Receita, compra parcelada ou previsão</button></p></div><div class="entry">'+recentesHTML()+'</div>';
+    '<p style="text-align:center;margin:.8rem 0 0;line-height:2"><button class="linkbtn" data-modo="completo">Receita, compra parcelada ou previsão</button><br><button class="linkbtn" data-modo="pdf">Importar extrato ou fatura em PDF</button></p></div><div class="entry">'+recentesHTML()+'</div>';
 }
 function abrirRapido(){
-  dlg.innerHTML='<h2>Novo lançamento</h2>'+rapidoHTML()+'<div class="dlgbtns"><button class="ghost" id="e-cancel" style="flex:1">Cancelar</button></div><p style="text-align:center;margin:.6rem 0 0"><button class="linkbtn" data-modo="completo">Receita, compra parcelada ou previsão</button></p>';dlg.dataset.k='';dlg.dataset.id='';
+  dlg.innerHTML='<h2>Novo lançamento</h2>'+rapidoHTML()+'<div class="dlgbtns"><button class="ghost" id="e-cancel" style="flex:1">Cancelar</button></div><p style="text-align:center;margin:.6rem 0 0;line-height:2"><button class="linkbtn" data-modo="completo">Receita, compra parcelada ou previsão</button><br><button class="linkbtn" data-modo="pdf">Importar extrato ou fatura em PDF</button></p>';dlg.dataset.k='';dlg.dataset.id='';
   if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','');var v=$('#q-v');if(v)v.focus();
 }
 function marcaCat(){var s=$('#q-c');document.querySelectorAll('[data-qcat]').forEach(function(b){b.classList.toggle('on',!!s&&b.dataset.qcat===s.value)})}
@@ -701,6 +729,7 @@ function lancarRapido(){
   }).catch(function(){S.busy=false;$('#q-go').disabled=false;err.textContent='Não foi possível salvar. Verifique a conexão e tente de novo.'});
 }
 function renderLancar(){
+  if(S.modo==='pdf'){renderImport();return}
   if(S.modo!=='completo'){renderRapido();return}
   var k=S.kind,f=favs(k);
   var h='<div class="entry card"><p style="margin:0 0 .6rem"><button class="linkbtn" data-modo="rapido">‹ Lançamento rápido</button></p>';
@@ -727,7 +756,7 @@ function itensMes(ym){var d=doc(ym),o=[],dtm=function(it){return it.dt&&it.dt.sl
 var ICDEL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>';
 function delBtn(kind,ym,it){return '<button class="del" data-del="'+kind+'|'+ym+'|'+esc(it.id)+'" aria-label="Apagar '+esc(it.d||'lançamento')+'" title="Apagar">'+ICDEL+'</button>'}
 function lrow(kind,ym,it,chips,val){
-  return '<div class="lrow" tabindex="0" data-edit="'+kind+'|'+ym+'|'+esc(it.id)+'"><span class="nm"><b>'+esc(it.d||'(sem descrição)')+'</b>'+notaHTML(it)+chips+'</span>'+val+delBtn(kind,ym,it)+'</div>'}
+  return '<div class="lrow" tabindex="0" data-edit="'+kind+'|'+ym+'|'+esc(it.id)+'"><span class="nm"><b title="Dois cliques para renomear">'+esc(it.d||'(sem descrição)')+'</b>'+notaHTML(it)+chips+'</span>'+val+delBtn(kind,ym,it)+'</div>'}
 function linha(o,comData){var it=o.it,k=o.k,chips,val,dc=comData&&o.dt?'<i class="chip">'+fmtData(o.dt)+'</i>':'';
   if(k==='desp'){chips='<i class="chip">'+esc(it.c||'Sem categoria')+'</i>'+(it.b?'<i class="chip">'+esc(it.b)+'</i>':'');val='<span class="val out">−'+brl(it.v)+'</span>'}
   else if(k==='rec'){chips='<i class="chip g">'+esc(it.t||'Receita')+'</i>';val='<span class="val in">+'+brl(it.v)+'</span>'}
@@ -782,11 +811,12 @@ function renderMes(){
     return '<button data-dia="'+dt+'" class="'+(u.dia===dt?'on ':'')+(dt===hj?'hoje ':'')+((dn===1||dn%5===0)?'m5':'')+'" style="--i:'+ix+'" title="Dia '+dn+': '+brl(v)+'" aria-label="Dia '+dn+', '+brl(v)+'" aria-pressed="'+(u.dia===dt)+'"><i class="col" style="height:'+(mxd&&v?Math.max(v/mxd*100,5).toFixed(0):0)+'%"></i><em></em><span>'+((dn===1||dn%5===0||dt===hj||u.dia===dt)?dn:'')+'</span></button>'}).join('')+'</div>';
   var temSaldo=d.rec.some(function(x){return /saldo anterior/i.test(x.t||'')});
   if(temAnt&&!temSaldo)h+='<div class="notice"><p>'+esc(ymLabel(ym))+' ainda não tem saldo anterior. '+esc(MES[+ant.split('-')[1]-1])+' fechou em <b class="num">'+brl(ta.atual)+'</b>.</p><button class="ghost" data-saldo="'+ta.atual+'">Trazer saldo</button></div>';
+  if(S.ultimaImp){var UI=S.ultimaImp;h+='<div class="notice"><p>'+(UI.erro?'A importação foi interrompida e parte dos lançamentos pode não ter sido salva.':UI.n+(UI.n===1?' lançamento importado':' lançamentos importados')+' do PDF, sem categoria. Defina as categorias abrindo cada lançamento.')+'</p><button class="ghost" data-imp="desfazer">Desfazer importação</button><button class="ghost" data-imp="fechar">Ok</button></div>'}
   h+='<div class="grid">';
   h+='<section class="card c12 hello"><div class="who"><small>Mensal</small><b>'+esc(ymLabel(ym))+'</b></div><div class="stats">'+stat('Receita mensal',t.rec,'in',ta&&ta.rec,na)+stat('Despesa mensal',t.desp,'out',ta&&ta.desp,na)+stat('Saldo atual',t.atual,t.atual<0?'out':'')+stat('Saldo futuro',t.futuro,'')+stat('Saldo possível',t.possivel,'')+'</div></section>';
   // diário
   var lb=function(k,n){return '<button data-ltab="'+k+'" aria-pressed="'+(u.tabL===k)+'">'+n+'</button>'};
-  h+='<section class="card c8"><header><h2>Diário de '+MES[p[1]-1].toLowerCase()+'</h2><button class="addbtn" data-novo aria-label="Novo lançamento">+</button></header>';
+  h+='<section class="card c8"><header><h2>Diário de '+MES[p[1]-1].toLowerCase()+'</h2><div class="hacoes"><button class="ghost pdfbtn" data-modo="pdf">Importar PDF</button><button class="addbtn" data-novo aria-label="Novo lançamento">+</button></div></header>';
   if(temData||cur)h+='<div class="diario">'+(cur?'<div><small>Gasto hoje</small><b>'+brl(saidasDia(hj))+'</b></div><div><small>Últimos 7 dias</small><b>'+brl(s7)+'</b></div>':'')+'<div><small>Média por dia</small><b>'+brl(totd/dias)+'</b></div>'+(mxd?'<div><small>Maior gasto, dia '+maior+'</small><b>'+brl(mxd)+'</b></div>':'')+'</div>'+reg;
   else if(its.length)h+='<p class="hint" style="margin:0 0 .8rem">Os lançamentos deste mês vieram da planilha sem data, por isso ficam todos em "sem data".</p>';
   h+='<div class="tools"><div class="seg">'+lb('all','Tudo')+lb('desp','Despesas')+lb('rec','Receitas')+lb('card','Cartão')+'</div><label class="busca">'+IC.busca+'<input id="busca" type="search" placeholder="Buscar" value="'+esc(u.q)+'" aria-label="Buscar lançamentos"></label><button class="ghost" data-ord>'+(u.ord==='val'?'Ordem: maior valor':'Ordem: por dia')+'</button></div>';
@@ -884,6 +914,156 @@ function renderAno(){
   h+='</div>';view.innerHTML=h;
 }
 
+/* ---------- importação de PDF (extrato ou fatura) ---------- */
+var PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/',pdfPronto=null;
+function carregaPdf(){if(pdfPronto)return pdfPronto;
+  pdfPronto=new Promise(function(ok,falha){if(window.pdfjsLib)return ok(window.pdfjsLib);
+    var s=document.createElement('script');s.src=PDFJS+'pdf.min.js';
+    s.onload=function(){if(!window.pdfjsLib){pdfPronto=null;return falha(new Error('rede'))}window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js';ok(window.pdfjsLib)};
+    s.onerror=function(){pdfPronto=null;falha(new Error('rede'))};document.head.appendChild(s)});
+  return pdfPronto}
+function textoPdf(buf,senha){return carregaPdf().then(function(lib){
+    return lib.getDocument({data:new Uint8Array(buf.slice(0)),password:senha||undefined,isEvalSupported:false}).promise}).then(function(pdf){
+    var ps=[];for(var i=1;i<=pdf.numPages;i++)ps.push(pdf.getPage(i).then(function(pg){return pg.getTextContent()}));return Promise.all(ps)}).then(function(pages){
+    var linhas=[];pages.forEach(function(tc){var rows=[];
+      tc.items.forEach(function(it){if(!it.str||!it.str.trim())return;var x=it.transform[4],y=it.transform[5],r=null;
+        for(var j=0;j<rows.length;j++)if(Math.abs(rows[j].y-y)<=2.5){r=rows[j];break}
+        if(!r){r={y:y,its:[]};rows.push(r)}r.its.push({x:x,w:it.width||0,s:it.str})});
+      rows.sort(function(a,b){return b.y-a.y});
+      rows.forEach(function(r){r.its.sort(function(a,b){return a.x-b.x});var s='',fim=null;
+        r.its.forEach(function(it){if(fim!==null&&it.x-fim>1)s+=' ';s+=it.s;fim=it.x+it.w});linhas.push(s.replace(/\s+/g,' ').trim())})});
+    return linhas})}
+var MESAB={jan:1,fev:2,mar:3,abr:4,mai:5,jun:6,jul:7,ago:8,set:9,out:10,nov:11,dez:12};
+var RE_DT=/^(\d{1,2})[\/.\-](\d{1,2})(?:[\/.\-](\d{2,4}))?(?![\d,])|^(\d{1,2})\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?(?:\s*(?:de\s+)?(\d{4}))?(?!\d)/i;
+var RE_VAL=/([+\-−–]\s*)?(?:R\$\s*)?([+\-−–]\s*)?(\d{1,3}(?:\.\d{3})+|\d+),(\d{2})(?!\d)(\s*[\-−–](?!\s*\d))?(\s*\(?[DC]\)?(?![A-Za-zÀ-ú]))?/g;
+function limpaDesc(s){return s.replace(/[•*·]{2,}\s*\d{4}/g,' ').replace(/R\$\s*$/,'').replace(/(\s+\d{4,})+\s*$/,'').replace(/^[\s\-–—:|]+|[\s\-–—:|+]+$/g,'').replace(/\s+/g,' ').trim()}
+function isoDe(dt,ref){if(!dt)return '';var ry=+ref.slice(0,4),rm=+ref.slice(5,7),y=dt.y||(dt.m>rm+1?ry-1:ry);
+  if(dt.d>new Date(y,dt.m,0).getDate())return '';return y+'-'+pad(dt.m)+'-'+pad(dt.d)}
+function analisaPdf(linhas){
+  var txt=linhas.join('\n'),fat=/fatura/i.test(txt)&&/(vencimento|limite|pagamento m[ií]nimo)/i.test(txt);
+  var banco=/nubank|nu pagamentos/i.test(txt)?'Nubank':/banco do brasil|ourocard|bb\.com/i.test(txt)?'BB':'';
+  var venc=null,mv=txt.match(/vencimento[^\d\n]{0,25}(\d{1,2})[\/.](\d{1,2})[\/.](\d{2,4})/i)||txt.match(/vencimento[^\d\n]{0,25}(\d{1,2})\s*(?:de\s+)?(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez)[a-zç]*\.?(?:\s*(?:de\s+)?(\d{4}))?/i);
+  if(mv){var vm=isNaN(+mv[2])?MESAB[mv[2].toLowerCase().slice(0,3)]:+mv[2],vy=mv[3]?(+mv[3]<100?2000+(+mv[3]):+mv[3]):+HOJE_YM.slice(0,4);if(vm>=1&&vm<=12)venc=vy+'-'+pad(vm)}
+  var itens=[],ult=null,ctx=0;
+  linhas.forEach(function(l){var s=l.replace(/\s+/g,' ').trim();if(!s)return;
+    var m=s.match(RE_DT),dt=null,rest=s,d,mo,y;
+    if(m){if(m[1]){d=+m[1];mo=+m[2];y=m[3]?(+m[3]<100?2000+(+m[3]):+m[3]):null}else{d=+m[4];mo=MESAB[m[5].toLowerCase().slice(0,3)];y=m[6]?+m[6]:null}
+      if(d>=1&&d<=31&&mo>=1&&mo<=12){dt={d:d,m:mo,y:y};rest=s.slice(m[0].length).trim()}}
+    var low=rest.toLowerCase();
+    if(/^(total de )?(sa[ií]das|d[eé]bitos)\b/.test(low)){ctx=-1;if(dt)ult=dt;return}
+    if(/^(total de )?(entradas|cr[eé]ditos)\b/.test(low)){ctx=1;if(dt)ult=dt;return}
+    RE_VAL.lastIndex=0;var v=RE_VAL.exec(rest);
+    if(!v){if(dt)ult=dt;return}
+    var desc=limpaDesc(rest.slice(0,v.index));if(!desc||desc.length<2||!/[A-Za-zÀ-ú]/.test(desc)){if(dt)ult=dt;return}
+    var num=parseFloat(v[3].replace(/\./g,'')+'.'+v[4]);if(!num)return;
+    var antes=(v[1]||'')+(v[2]||''),sg=0;
+    if(/[\-−–]/.test(antes)||v[5]||(v[6]&&/D/.test(v[6])))sg=-1;else if(/\+/.test(antes)||(v[6]&&/C/.test(v[6])))sg=1;
+    var proprio=!!dt;if(dt)ult=dt;else dt=ult;
+    var aviso='',sel=true,ld=desc.toLowerCase();
+    if(/s\s?a\s?l\s?d\s?o/.test(ld)){aviso='saldo';sel=false}
+    else if(/^(sub)?total|total da fatura|pagamento m[ií]nimo|limite|valor da fatura|fatura anterior/.test(ld)){aviso='total ou resumo';sel=false}
+    else if(fat&&/pagamento|pagto|pgto/.test(ld)){aviso='pagamento da fatura';sel=false}
+    else if(fat&&!proprio){aviso='sem data';sel=false}
+    itens.push({dt:dt,d:desc,v:num,sg:sg||ctx,sel0:sel,aviso:aviso});
+  });
+  var ref=venc;
+  if(!fat||!ref){var cont={};itens.forEach(function(r){var iso=isoDe(r.dt,HOJE_YM);if(iso&&r.sel0)cont[iso.slice(0,7)]=(cont[iso.slice(0,7)]||0)+1});
+    var mx=0;Object.keys(cont).forEach(function(k){if(cont[k]>mx){mx=cont[k];ref=fat?ymAdd(k,1):k}})}
+  return {tipo:fat?'fatura':'extrato',banco:banco,ref:ref||HOJE_YM,itens:itens}}
+function impDup(r){var d=S.docs[r.ym],lista=r.k==='card'?cardFor(r.ym).map(function(c){return c.it}):(d?d[r.k]:[]);
+  var v=r.k==='card'&&r.sg<0?-r.v:r.v,dl=r.d.trim().toLowerCase();
+  return lista.some(function(x){return Math.abs((x.v||0)-v)<0.005&&((r.iso&&x.dt===r.iso)||(x.d||'').trim().toLowerCase()===dl)})}
+function impRecalc(){var I=S.imp;
+  I.itens.forEach(function(r){r.iso=isoDe(r.dt,I.ref);
+    if(I.tipo==='fatura'){r.k='card';r.ym=I.ref}else{r.k=r.kman||(r.sg>0?'rec':'desp');r.ym=r.iso?r.iso.slice(0,7):I.ref}
+    r.dup=impDup(r);if(!r.mexeu)r.sel=r.sel0&&!r.dup})}
+function impLer(senha){var A=S.impArq;if(!A)return;S.impLendo=true;S.impErro='';renderImport();
+  textoPdf(A.buf,senha).then(function(linhas){S.impLendo=false;S.impPede=false;
+    if(!linhas.join('').trim()){S.impErro='Este PDF não tem texto que possa ser lido (parece ser uma imagem escaneada). Baixe o extrato ou a fatura de novo pelo app ou internet banking.';renderImport();return}
+    var a=analisaPdf(linhas);
+    if(!a.itens.length){S.impErro='Não encontrei lançamentos com data e valor neste PDF.';renderImport();return}
+    var lst=a.tipo==='fatura'?S.cfg.cartoes:S.cfg.bancos;
+    S.imp={nome:A.nome,tipo:a.tipo,banco:lst.indexOf(a.banco)>=0?a.banco:lst[0],ref:a.ref,itens:a.itens};impRecalc();renderImport();window.scrollTo(0,0)})
+  .catch(function(e){S.impLendo=false;
+    if(e&&e.name==='PasswordException'){S.impPede=true;S.impErro=e.code===2?'Senha incorreta.':''}
+    else if(e&&e.message==='rede')S.impErro='Não foi possível carregar o leitor de PDF. Verifique a conexão e tente de novo.';
+    else S.impErro='Não foi possível ler este PDF.';
+    renderImport()})}
+function impAbrir(f){S.imp=null;S.impPede=false;S.impErro='';var r=new FileReader();
+  r.onload=function(){S.impArq={nome:f.name,buf:r.result};impLer('')};
+  r.onerror=function(){S.impErro='Não foi possível abrir o arquivo.';renderImport()};r.readAsArrayBuffer(f)}
+function renderImport(){var I=S.imp,h='<div class="entry card imp"><p style="margin:0 0 .6rem"><button class="linkbtn" data-modo="rapido">‹ Lançamento rápido</button></p><h2>Importar extrato ou fatura</h2>';
+  if(!I){
+    h+='<p class="hint" style="margin:.4rem 0 1rem">Escolha o PDF do extrato da conta ou da fatura do cartão. Os lançamentos aparecem aqui para você conferir antes de entrarem no site, e entram sem categoria.</p>';
+    h+='<label class="soltar"><input type="file" id="imp-file" accept="application/pdf,.pdf"><span>'+(S.impArq?'Escolher outro PDF':'Escolher PDF')+'</span></label>';
+    if(S.impArq)h+='<p class="hint">'+esc(S.impArq.nome)+'</p>';
+    if(S.impPede)h+='<div class="field" style="margin-top:1rem"><label for="imp-senha">Este PDF tem senha. Digite a senha do arquivo.</label><div class="inline"><input type="password" id="imp-senha" autocomplete="off" style="flex:1;border:1px solid var(--line);border-radius:6px;padding:.55rem .7rem;min-height:2.8rem;background:var(--surface)"><button class="ghost" data-imp="senha">Abrir PDF</button></div></div>';
+    if(S.impLendo)h+='<p class="muted" style="margin-top:1rem">Lendo o PDF…</p>';
+    h+='<div class="err" role="alert">'+esc(S.impErro||'')+'</div></div>';view.innerHTML=h;var ps=$('#imp-senha');if(ps)ps.focus();return}
+  var fat=I.tipo==='fatura',lst=fat?S.cfg.cartoes:S.cfg.bancos;
+  h+='<p class="hint" style="margin:.2rem 0 1rem">'+esc(I.nome)+'. Confira a lista, ajuste os nomes se quiser e desmarque o que não deve entrar.</p>';
+  h+='<div class="imp-cfg"><div class="field"><span class="lab">Este PDF é</span>'+seg('imp-tipo',[['extrato','Extrato da conta'],['fatura','Fatura do cartão']],I.tipo)+'</div>';
+  h+='<div class="field"><span class="lab">'+(fat?'Cartão':'Conta')+'</span>'+seg('imp-banco',lst.map(function(b){return [b,b]}),I.banco)+'</div>';
+  h+='<div class="field"><label for="imp-ref">'+(fat?'Fatura de':'Mês dos lançamentos sem data')+'</label><select id="imp-ref">'+mesesOpts(I.ref)+'</select></div></div>';
+  var sel=I.itens.filter(function(r){return r.sel}),todos=sel.length===I.itens.length;
+  h+='<div class="ihead"><label class="check"><input type="checkbox" id="imp-todos"'+(todos?' checked':'')+'> Marcar todos</label><span class="muted">'+I.itens.length+' encontrados</span></div><div class="ilist">';
+  h+=I.itens.map(function(r,i){var v=r.k==='card'&&r.sg<0?-r.v:r.v,cls=r.k==='rec'?'in':r.k==='desp'?'out':'',sn=r.k==='rec'||v<0?'+':'−';
+    return '<div class="irow'+(r.sel?'':' off')+(fat?' fat':'')+'"><input type="checkbox" data-isel="'+i+'"'+(r.sel?' checked':'')+' aria-label="Importar '+esc(r.d)+'">'+
+      '<span class="idt">'+(r.iso?fmtData(r.iso):'—')+'</span>'+
+      '<span class="inm"><input type="text" class="inome" data-inome="'+i+'" value="'+esc(r.d)+'" aria-label="Nome do lançamento">'+(r.aviso?'<i class="chip w">'+r.aviso+'</i>':'')+(r.dup?'<i class="chip w">já lançado?</i>':'')+(!fat&&r.ym!==I.ref?'<i class="chip">entra em '+esc(ymLabel(r.ym))+'</i>':'')+'</span>'+
+      (fat?'':'<select data-ik="'+i+'" aria-label="Tipo de '+esc(r.d)+'"><option value="desp"'+(r.k==='desp'?' selected':'')+'>Despesa</option><option value="rec"'+(r.k==='rec'?' selected':'')+'>Receita</option></select>')+
+      '<span class="val '+cls+'">'+sn+brl(Math.abs(v))+'</span></div>'}).join('');
+  h+='</div>';
+  var sd=sum(sel,function(r){return r.k==='desp'?r.v:0}),sr=sum(sel,function(r){return r.k==='rec'?r.v:0}),sc=sum(sel,function(r){return r.k==='card'?(r.sg<0?-r.v:r.v):0});
+  h+='<div class="lfoot"><span class="muted">'+sel.length+(sel.length===1?' selecionado':' selecionados')+'</span><span style="display:flex;gap:1.2rem;flex-wrap:wrap">'+
+    (fat?'<span>Total no cartão '+esc(I.banco)+' <span class="num">'+brl(sc)+'</span></span>':(sr?'<span>Receitas <span class="num in">'+brl(sr)+'</span></span>':'')+(sd?'<span>Despesas <span class="num out">'+brl(sd)+'</span></span>':''))+'</span></div>';
+  h+='<div class="err" role="alert">'+esc(S.impErro||'')+'</div><div class="dlgbtns"><button class="primary" data-imp="ok"'+(sel.length?'':' disabled')+'>'+(sel.length?'Lançar '+sel.length+(sel.length===1?' lançamento':' lançamentos'):'Nada selecionado')+'</button><button class="ghost" data-imp="novo">Escolher outro PDF</button></div></div>';
+  view.innerHTML=h}
+function impLancar(){var I=S.imp,sel=I.itens.filter(function(r){return r.sel});if(!sel.length||S.busy)return;
+  var lote='imp'+uid(),porMes={},cont={};
+  sel.forEach(function(r){var it={id:uid(),d:(r.d||'').trim()||'Sem descrição',v:Math.round(r.v*100)/100,imp:lote};if(r.iso)it.dt=r.iso;
+    if(r.k==='card'){it.b=I.banco;it.p=1;it.n=1;it.s='av';it.proj=false;if(r.sg<0)it.v=-it.v}
+    else if(r.k==='desp'){it.c='';it.b=I.banco}else{it.t=''}
+    (porMes[r.ym]=porMes[r.ym]||[]).push({k:r.k,it:it});cont[r.ym]=(cont[r.ym]||0)+1});
+  var meses=Object.keys(porMes).sort(),alvo=meses.reduce(function(a,b){return cont[b]>(cont[a]||0)?b:a},meses[0]),btn=$('[data-imp="ok"]');if(btn)btn.disabled=true;S.busy=true;
+  var fim=function(erro){S.busy=false;S.ultimaImp={lote:lote,meses:meses,n:sel.length,erro:erro};S.imp=null;S.impArq=null;S.modo='rapido';S.tab='mes';S.ym=alvo;S.ui.ym=null;render();window.scrollTo(0,0);
+    toast(erro?'Parte da importação não foi salva':sel.length+(sel.length===1?' lançamento importado':' lançamentos importados'))};
+  meses.reduce(function(p,ym){return p.then(function(){return mutate(ym,function(d){porMes[ym].forEach(function(x){d[x.k].push(x.it)})})})},Promise.resolve())
+    .then(function(){fim(false)}).catch(function(){fim(true)})}
+function desfazImp(){var U=S.ultimaImp;if(!U||S.busy)return;S.busy=true;
+  U.meses.reduce(function(p,ym){return p.then(function(){return mutate(ym,function(d){['desp','rec','card'].forEach(function(k){d[k]=d[k].filter(function(x){return x.imp!==U.lote})})})})},Promise.resolve())
+    .then(function(){S.busy=false;S.ultimaImp=null;toast('Importação desfeita');render()}).catch(function(){S.busy=false;toast('Não foi possível desfazer')})}
+document.addEventListener('change',function(e){var t=e.target;
+  if(t.id==='imp-file'){var f=t.files&&t.files[0];if(f)impAbrir(f);return}
+  var I=S.imp;if(!I||S.tab!=='lancar')return;
+  if(t.name==='imp-tipo'){I.tipo=t.value;var l=I.tipo==='fatura'?S.cfg.cartoes:S.cfg.bancos;if(l.indexOf(I.banco)<0)I.banco=l[0];impRecalc();renderImport();return}
+  if(t.name==='imp-banco'){I.banco=t.value;renderImport();return}
+  if(t.id==='imp-ref'){I.ref=t.value;impRecalc();renderImport();return}
+  if(t.id==='imp-todos'){I.itens.forEach(function(r){r.sel=t.checked;r.mexeu=true});renderImport();return}
+  if(t.dataset.isel!=null){var r=I.itens[+t.dataset.isel];r.sel=t.checked;r.mexeu=true;renderImport();return}
+  if(t.dataset.ik!=null){I.itens[+t.dataset.ik].kman=t.value;impRecalc();renderImport();return}
+});
+document.addEventListener('input',function(e){var t=e.target;if(t.dataset&&t.dataset.inome!=null&&S.imp)S.imp.itens[+t.dataset.inome].d=t.value});
+document.addEventListener('keydown',function(e){var t=e.target;if(e.key!=='Enter')return;
+  if(t.id==='imp-senha'){e.preventDefault();impLer(t.value)}else if(t.classList&&t.classList.contains('inome')){e.preventDefault();t.blur()}});
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-imp]');if(!t)return;var a=t.dataset.imp;
+  if(a==='ok')impLancar();else if(a==='novo'){S.imp=null;S.impErro='';S.impPede=false;renderImport()}
+  else if(a==='senha'){var s=$('#imp-senha');impLer(s?s.value:'')}else if(a==='desfazer')desfazImp();else if(a==='fechar'){S.ultimaImp=null;render()}});
+
+/* ---------- renomear com dois cliques ---------- */
+function renomear(nb,q){var it=findItem(q[0],q[1],q[2]);if(!it)return;var old=it.d||'',feito=false;
+  nb.classList.add('ed');nb.innerHTML='<input class="rn" aria-label="Novo nome" value="'+esc(old)+'">';var inp=nb.querySelector('input');inp.focus();inp.select();
+  var guarda=function(){return [].map.call(document.querySelectorAll('.scrolly'),function(x){return x.scrollTop})},
+      volta=function(p){[].forEach.call(document.querySelectorAll('.scrolly'),function(x,i){if(p[i])x.scrollTop=p[i]})};
+  var fim=function(salvar){if(feito)return;feito=true;var nv=inp.value.trim(),p=guarda(),y=window.scrollY;
+    var redesenha=function(){render();volta(p);window.scrollTo(0,y)};
+    if(!salvar||!nv||nv===old){redesenha();return}
+    mutate(q[1],function(d){d[KIND[q[0]].lista].forEach(function(x){if(x.id===q[2])x.d=nv})}).then(function(){toast('Nome alterado');redesenha()}).catch(function(){toast('Não foi possível salvar o nome');redesenha()})};
+  inp.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();e.stopPropagation();fim(true)}else if(e.key==='Escape'){e.preventDefault();e.stopPropagation();fim(false)}});
+  inp.addEventListener('blur',function(){fim(true)});
+  inp.addEventListener('click',function(e){e.stopPropagation()});
+  inp.addEventListener('dblclick',function(e){e.stopPropagation()})}
+
 /* ---------- ações ---------- */
 function lancar(){
   if(S.busy)return;var k=S.kind,r=readForm('n',k),err=$('#n-err');
@@ -940,7 +1120,11 @@ document.addEventListener('click',function(e){
   if(t.dataset.hoje){var inp=document.getElementById(t.dataset.hoje+'-dt');var d=new Date();inp.value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());return}
   if(t.id==='n-go'){lancar();return}
   if(t.dataset.undo){var p=t.dataset.undo.split('|');remover(p[0],p[1],p[2]).then(function(){S.recent=S.recent.filter(function(r){return r.id!==p[2]});toast('Lançamento desfeito');render()}).catch(function(){toast('Não foi possível desfazer')});return}
-  if(t.dataset.edit){var q=t.dataset.edit.split('|');abrirDlg(q[0],q[1],q[2]);return}
+  if(t.dataset.edit){var q=t.dataset.edit.split('|'),nb=e.target.closest('.nm b');
+    if(nb&&t.contains(nb)){if(nb.classList.contains('ed'))return;var agora=Date.now();
+      if(S.ultNm===nb&&agora-S.ultT<450){clearTimeout(S.nmT);S.ultNm=null;renomear(nb,q);return}
+      S.ultNm=nb;S.ultT=agora;clearTimeout(S.nmT);S.nmT=setTimeout(function(){S.ultNm=null;if(nb.isConnected)abrirDlg(q[0],q[1],q[2])},450);return}
+    abrirDlg(q[0],q[1],q[2]);return}
   if(t.dataset.add){abrirDlg(t.dataset.add,S.ym,null,t.dataset.b?{b:t.dataset.b}:null);return}
   if(t.dataset.goto){S.ym=t.dataset.goto;S.tab='mes';render();window.scrollTo(0,0);return}
   if(t.dataset.saldo!=null){var v=Math.round(parseFloat(t.dataset.saldo)*100)/100;t.disabled=true;
