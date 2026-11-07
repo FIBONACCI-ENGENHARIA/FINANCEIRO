@@ -455,7 +455,7 @@ dialog h2{margin-bottom:.4rem}
 <script>
 /* Versão GitHub sincronizada: os dados ficam no Firebase (Firestore), na conta Google de quem entra. */
 (function(){
-  var FIREBASE_CONFIG=null; /*CONFIG*/
+  var FIREBASE_CONFIG={"apiKey": "AIzaSyDwEqMOBjCoL8HuifJhIU4SVOPg4s4_s4A", "authDomain": "financeiro-cc400.firebaseapp.com", "projectId": "financeiro-cc400", "storageBucket": "financeiro-cc400.firebasestorage.app", "messagingSenderId": "643231717745", "appId": "1:643231717745:web:80231d5d2afa763a7dbed0"};
   var LS=window.localStorage,te=new TextEncoder(),td=new TextDecoder(),MINUTOS=10,uid=null,email='',col=null,vivoOn=false;
   function lsGet(k){try{return LS.getItem(k)}catch(e){return null}}
   function lsSet(k,v){try{LS.setItem(k,v)}catch(e){}}
