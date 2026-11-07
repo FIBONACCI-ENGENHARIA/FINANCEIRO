@@ -449,101 +449,162 @@ dialog h2{margin-bottom:.4rem}
 <dialog id="dlg"></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-/* Versão independente: os dados ficam neste navegador (localStorage). Com senha, ficam cifrados (AES-GCM, chave derivada da senha por PBKDF2). */
+/* Versão GitHub sincronizada: os dados ficam no Firebase (Firestore), na conta Google de quem entra. */
 (function(){
-  var PRE='fin:',META='finsec:meta',ITER=250000,MINUTOS=10,chave=null,LS=window.localStorage,te=new TextEncoder(),td=new TextDecoder();
+  var FIREBASE_CONFIG=null; /*CONFIG*/
+  var LS=window.localStorage,te=new TextEncoder(),td=new TextDecoder(),MINUTOS=10,uid=null,email='',col=null,vivoOn=false;
+  function lsGet(k){try{return LS.getItem(k)}catch(e){return null}}
+  function lsSet(k,v){try{LS.setItem(k,v)}catch(e){}}
+  function lsDel(k){try{LS.removeItem(k)}catch(e){}}
+  function conf(){if(FIREBASE_CONFIG)return FIREBASE_CONFIG;try{return JSON.parse(lsGet('fin-fbconfig'))}catch(e){return null}}
   function b64(buf){var s='',a=new Uint8Array(buf);for(var i=0;i<a.length;i++)s+=String.fromCharCode(a[i]);return btoa(s)}
   function ub64(s){var b=atob(s),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
-  function meta(){try{return JSON.parse(LS.getItem(META))}catch(e){return null}}
-  function ids(){var o=[];try{for(var i=0;i<LS.length;i++){var k=LS.key(i);if(k&&k.indexOf(PRE)===0)o.push(k.slice(PRE.length))}}catch(e){}return o.sort()}
-  function deriva(senha,salt,iter){return crypto.subtle.importKey('raw',te.encode(senha),'PBKDF2',false,['deriveKey']).then(function(k){
-    return crypto.subtle.deriveKey({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])})}
-  function cifra(k,obj){var iv=crypto.getRandomValues(new Uint8Array(12));
-    return crypto.subtle.encrypt({name:'AES-GCM',iv:iv},k,te.encode(JSON.stringify(obj))).then(function(ct){return JSON.stringify({enc:1,iv:b64(iv),ct:b64(ct)})})}
-  function decifra(k,str){var o=JSON.parse(str);if(!o||o.enc!==1)return Promise.resolve(o);
-    return crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(o.iv)},k,ub64(o.ct)).then(function(pt){return JSON.parse(td.decode(pt))})}
-  function ler(id,k){var v=LS.getItem(PRE+id);if(!v)return Promise.resolve(null);k=k===undefined?chave:k;return k?decifra(k,v):Promise.resolve(JSON.parse(v))}
-  function gravar(id,d,k){k=k===undefined?chave:k;return (k?cifra(k,d):Promise.resolve(JSON.stringify(d))).then(function(s){LS.setItem(PRE+id,s)})}
-  function todos(k){var l=ids();return Promise.all(l.map(function(id){return ler(id,k)})).then(function(v){var o={};l.forEach(function(id,i){o[id]=v[i]});return o})}
-  var db={collection:function(){return {
-    get:function(){return todos().then(function(o){return {docs:Object.keys(o).map(function(id){return {id:id,exists:true,data:function(){return o[id]}}})}})},
+  function limpa(o){return JSON.parse(JSON.stringify(o))}
+
+  /* acesso aos dados no formato que o site usa */
+  var dbApi={collection:function(){return {
+    get:function(){return col.get().then(function(q){return {docs:q.docs.map(function(d){var v=d.data();return {id:d.id,exists:true,data:function(){return v}}})}})},
     doc:function(id){return {
-      get:function(){return ler(id).then(function(v){return {id:id,exists:!!v,data:function(){return v}}})},
-      set:function(d){return gravar(id,d)}}}}}};
+      get:function(){return col.doc(id).get().then(function(d){var v=d.exists?d.data():undefined;return {id:id,exists:d.exists,data:function(){return v}}})},
+      set:function(dados){return col.doc(id).set(limpa(dados))}}}}}};
   var liberar,liberado=new Promise(function(r){liberar=r});
   window.claude={use:function(n){
-    if(n==='user')return Promise.resolve({id:function(){return Promise.resolve('local')}});
-    if(n==='db')return liberado.then(function(){return db});
+    if(n==='user')return Promise.resolve({id:function(){return Promise.resolve('me')}});
+    if(n==='db')return liberado.then(function(){return dbApi});
     return Promise.resolve(null)}};
 
-  /* painel de senha */
+  /* painéis */
   function painel(o){
     var d=document.createElement('div');d.className='trava';d.setAttribute('role','dialog');d.setAttribute('aria-modal','true');d.setAttribute('aria-labelledby','tv-t');
-    var h='<div class="tv-cx"><h2 id="tv-t">'+o.titulo+'</h2>'+(o.texto?'<p class="hint" style="margin:0 0 1rem">'+o.texto+'</p>':'');
-    o.campos.forEach(function(c,i){h+='<div class="field"><label for="tv-'+i+'">'+c+'</label><input type="password" id="tv-'+i+'" autocomplete="new-password" autocapitalize="off" spellcheck="false"></div>'});
-    h+='<div class="err" id="tv-err" role="alert"></div><div class="dlgbtns"><button class="primary" id="tv-ok">'+o.botao+'</button>'+(o.cancelar?'<button class="ghost" id="tv-no">Cancelar</button>':'')+'</div></div>';
+    var h='<div class="tv-cx"><h2 id="tv-t">'+o.titulo+'</h2>'+(o.texto?'<div class="hint" style="margin:0 0 1rem">'+o.texto+'</div>':'');
+    (o.campos||[]).forEach(function(c,i){h+='<div class="field"><label for="tv-'+i+'">'+c+'</label><input type="password" id="tv-'+i+'" autocomplete="new-password" autocapitalize="off" spellcheck="false"></div>'});
+    if(o.area)h+='<div class="field"><label for="tv-area">'+o.area+'</label><textarea id="tv-area" rows="9" spellcheck="false" style="font-family:monospace;font-size:.85rem"></textarea></div>';
+    h+='<div class="err" id="tv-err" role="alert"></div><div class="dlgbtns">'+(o.botao?'<button class="primary" id="tv-ok">'+o.botao+'</button>':'')+(o.cancelar?'<button class="ghost" id="tv-no">'+(o.cancelarTxt||'Cancelar')+'</button>':'')+'</div></div>';
     d.innerHTML=h;document.body.appendChild(d);
-    var ins=d.querySelectorAll('input'),err=d.querySelector('#tv-err'),ok=d.querySelector('#tv-ok'),ocupado=false;
-    var fechar=function(){d.remove()},erro=function(t){ocupado=false;ok.disabled=false;err.textContent=t;ins[0].focus();ins[0].select()};
-    var vai=function(){if(ocupado)return;ocupado=true;ok.disabled=true;err.textContent='';o.ok([].map.call(ins,function(x){return x.value}),erro,fechar)};
-    ok.addEventListener('click',vai);d.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();vai()}if(e.key==='Escape'&&o.cancelar)fechar()});
-    if(o.cancelar)d.querySelector('#tv-no').addEventListener('click',fechar);
-    ins[0].focus();
+    var ins=d.querySelectorAll('input,textarea'),err=d.querySelector('#tv-err'),ok=d.querySelector('#tv-ok'),ocupado=false;
+    var fechar=function(){d.remove()},erro=function(t){ocupado=false;if(ok)ok.disabled=false;err.textContent=t;if(ins[0]){ins[0].focus()}};
+    var vai=function(){if(ocupado||!o.ok)return;ocupado=true;if(ok)ok.disabled=true;err.textContent='';o.ok([].map.call(ins,function(x){return x.value}),erro,fechar)};
+    if(ok)ok.addEventListener('click',vai);
+    d.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.tagName!=='TEXTAREA'){e.preventDefault();vai()}if(e.key==='Escape'&&o.cancelar){fechar();if(o.aoCancelar)o.aoCancelar()}});
+    if(o.cancelar)d.querySelector('#tv-no').addEventListener('click',function(){fechar();if(o.aoCancelar)o.aoCancelar()});
+    if(ins[0])ins[0].focus();else if(ok)ok.focus();
+    return {erro:erro,fechar:fechar,el:d};
   }
-  function confere(senha){var m=meta();return deriva(senha,ub64(m.salt),m.iter).then(function(k){return decifra(k,m.check).then(function(){return k})})}
-  function novaChave(senha){var salt=crypto.getRandomValues(new Uint8Array(16));return deriva(senha,salt,ITER).then(function(k){return cifra(k,{ok:1}).then(function(ck){return {k:k,meta:{v:1,salt:b64(salt),iter:ITER,check:ck}}})})}
-  function regrava(dados,k){return Object.keys(dados).reduce(function(p,id){return p.then(function(){return gravar(id,dados[id],k)})},Promise.resolve())}
+  function tela(titulo,texto){document.body.insertAdjacentHTML('beforeend','<div class="trava"><div class="tv-cx"><h2>'+titulo+'</h2><div class="hint">'+texto+'</div></div></div>')}
+
+  /* configuração inicial (quando o site ainda não tem os dados do projeto Firebase) */
+  function pedeConfig(){
+    painel({titulo:'Ligar o site ao Firebase',texto:'Cole aqui o trecho <b>firebaseConfig</b> que o Firebase mostrou ao registrar o app da Web. Isso é feito uma vez em cada navegador, ou uma vez só se o trecho for colocado dentro do arquivo do site.',area:'Trecho firebaseConfig',botao:'Salvar e continuar',ok:function(v,erro){
+      var t=v[0],o={};['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(function(k){var m=t.match(new RegExp(k+'\\s*["\']?\\s*:\\s*["\']([^"\']+)["\']'));if(m)o[k]=m[1]});
+      if(!o.apiKey||!o.projectId||!o.appId)return erro('Não encontrei apiKey, projectId e appId nesse trecho. Copie o bloco inteiro do firebaseConfig.');
+      if(!o.authDomain)o.authDomain=o.projectId+'.firebaseapp.com';
+      lsSet('fin-fbconfig',JSON.stringify(o));window.location.reload()}});
+  }
+
+  /* trava deste aparelho (senha local, opcional) */
+  function lockMeta(){try{return JSON.parse(lsGet('fin-lock'))}catch(e){return null}}
+  function hashSenha(senha,salt,iter){return crypto.subtle.importKey('raw',te.encode(senha),'PBKDF2',false,['deriveBits']).then(function(k){
+    return crypto.subtle.deriveBits({name:'PBKDF2',salt:salt,iterations:iter,hash:'SHA-256'},k,256)}).then(b64)}
+  function confereLock(senha){var m=lockMeta();return hashSenha(senha,ub64(m.salt),m.iter).then(function(h){if(h!==m.hash)throw 'senha'})}
+  function novaLock(senha){var salt=crypto.getRandomValues(new Uint8Array(16));return hashSenha(senha,salt,200000).then(function(h){lsSet('fin-lock',JSON.stringify({salt:b64(salt),iter:200000,hash:h}))})}
   function valida(a,b){if(a.length<4)return 'A senha precisa ter pelo menos 4 caracteres.';if(a!==b)return 'As duas senhas não são iguais.';return ''}
-  function destravar(){
-    painel({titulo:'Financeiro',texto:'Digite a senha para abrir.',campos:['Senha'],botao:'Entrar',ok:function(v,erro,fechar){
-      confere(v[0]).then(function(k){chave=k;fechar();rodape();vigia();liberar()}).catch(function(){erro('Senha incorreta.')})}});
-  }
-  function criarSenha(){
-    painel({titulo:'Criar senha',texto:'A senha vale só para este navegador. Se você esquecer, não há como recuperar os dados: guarde um backup em lugar seguro.',campos:['Nova senha','Repita a senha'],botao:'Criar senha',cancelar:true,ok:function(v,erro,fechar){
-      var e=valida(v[0],v[1]);if(e)return erro(e);
-      todos(null).then(function(dados){return novaChave(v[0]).then(function(n){return regrava(dados,n.k).then(function(){LS.setItem(META,JSON.stringify(n.meta));chave=n.k})})})
-        .then(function(){fechar();rodape('Senha criada. Ela será pedida sempre que o site for aberto.');vigia()}).catch(function(){erro('Não foi possível criar a senha.')})}});
-  }
-  function alterarSenha(){
-    painel({titulo:'Alterar senha',campos:['Senha atual','Nova senha','Repita a nova senha'],botao:'Alterar senha',cancelar:true,ok:function(v,erro,fechar){
-      var e=valida(v[1],v[2]);if(e)return erro(e);
-      confere(v[0]).then(function(kOld){return todos(kOld).then(function(dados){return novaChave(v[1]).then(function(n){return regrava(dados,n.k).then(function(){LS.setItem(META,JSON.stringify(n.meta));chave=n.k})})})},function(){throw 'senha'})
-        .then(function(){fechar();rodape('Senha alterada.')}).catch(function(x){erro(x==='senha'?'Senha atual incorreta.':'Não foi possível alterar a senha.')})}});
-  }
-  function removerSenha(){
-    painel({titulo:'Remover senha',texto:'Sem senha, qualquer pessoa que abrir o site neste navegador vê os lançamentos.',campos:['Senha atual'],botao:'Remover senha',cancelar:true,ok:function(v,erro,fechar){
-      confere(v[0]).then(function(k){return todos(k).then(function(dados){return regrava(dados,null).then(function(){LS.removeItem(META);chave=null})})},function(){throw 'senha'})
-        .then(function(){fechar();rodape('Senha removida.')}).catch(function(x){erro(x==='senha'?'Senha incorreta.':'Não foi possível remover a senha.')})}});
-  }
   var tempo=null;
-  function vigia(){if(!meta())return;var arma=function(){clearTimeout(tempo);tempo=setTimeout(function(){if(meta())window.location.reload()},MINUTOS*60000)};
+  function vigia(){if(!lockMeta())return;var arma=function(){clearTimeout(tempo);tempo=setTimeout(function(){if(lockMeta())window.location.reload()},MINUTOS*60000)};
     if(!vigia.on){vigia.on=true;['pointerdown','keydown','scroll'].forEach(function(ev){window.addEventListener(ev,arma,{passive:true})})}arma()}
 
-  /* rodapé: backup e senha */
-  function rodape(aviso){
+  /* juntar dados sem apagar nada */
+  function junta(id,a,b){if(!a)return limpa(b);if(!b)return a;var o=limpa(a);
+    if(id==='config'){['cats','tipos','bancos','cartoes'].forEach(function(k){var l=o[k]||[];(b[k]||[]).forEach(function(x){if(l.indexOf(x)<0)l.push(x)});o[k]=l});return o}
+    ['rec','desp','card','prev','receber'].forEach(function(k){var l=o[k]||[],ids={};l.forEach(function(x){ids[x.id]=1});(b[k]||[]).forEach(function(x){if(!ids[x.id]){l.push(x);ids[x.id]=1}});o[k]=l});
+    ['anaPago','reembPago'].forEach(function(k){if(b[k]){o[k]=o[k]||{};Object.keys(b[k]).forEach(function(x){if(b[k][x])o[k][x]=true})}});
+    var na=(o.notas||'').trim(),nb=(b.notas||'').trim();if(nb&&na.indexOf(nb)<0)o.notas=nb.indexOf(na)>=0?nb:(na?na+'\n'+nb:nb);
+    if(!o.ym&&b.ym)o.ym=b.ym;return o}
+  function juntaNaNuvem(dados){var ids=Object.keys(dados).filter(function(id){return (id==='config'||/^m-\d{4}-\d{2}$/.test(id))&&dados[id]&&typeof dados[id]==='object'});
+    return ids.reduce(function(p,id){return p.then(function(){return col.doc(id).get().then(function(d){return col.doc(id).set(limpa(junta(id,d.exists?d.data():null,dados[id])))})})},Promise.resolve()).then(function(){return ids.length})}
+
+  /* dados da versão anterior, que ficavam só neste navegador */
+  function antigosIds(){var o=[];try{for(var i=0;i<LS.length;i++){var k=LS.key(i);if(k&&k.indexOf('fin:')===0)o.push(k.slice(4))}}catch(e){}return o}
+  function antigosLer(senha){var meta=null;try{meta=JSON.parse(lsGet('finsec:meta'))}catch(e){}
+    var pk=meta?crypto.subtle.importKey('raw',te.encode(senha||''),'PBKDF2',false,['deriveKey']).then(function(k){
+      return crypto.subtle.deriveKey({name:'PBKDF2',salt:ub64(meta.salt),iterations:meta.iter,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['decrypt'])}):Promise.resolve(null);
+    var dec=function(k,str){var o=JSON.parse(str);if(!o||o.enc!==1)return Promise.resolve(o);if(!k)throw 'senha';
+      return crypto.subtle.decrypt({name:'AES-GCM',iv:ub64(o.iv)},k,ub64(o.ct)).then(function(pt){return JSON.parse(td.decode(pt))})};
+    return pk.then(function(k){var chk=meta?dec(k,meta.check):Promise.resolve();return chk.then(function(){var ids=antigosIds(),o={};
+      return Promise.all(ids.map(function(id){return dec(k,lsGet('fin:'+id)).then(function(v){o[id]=v})})).then(function(){return o})})}).catch(function(e){throw 'senha'})}
+  function antigosApagar(){antigosIds().forEach(function(id){lsDel('fin:'+id)});lsDel('finsec:meta')}
+  function ofereceMigrar(){if(!antigosIds().length||lsGet('fin-migrado:'+uid))return;var cifrado=!!lsGet('finsec:meta');
+    painel({titulo:'Lançamentos guardados neste navegador',texto:'Este navegador tem lançamentos da versão anterior do site, que ficavam só aqui. Junte-os aos dados da nuvem para que apareçam em todos os aparelhos. Nada é apagado na nuvem, e lançamentos repetidos não são duplicados.',
+      campos:cifrado?['Senha que você usava neste navegador']:[],botao:'Juntar com a nuvem',cancelar:true,cancelarTxt:'Agora não',aoCancelar:function(){},
+      ok:function(v,erro,fechar){antigosLer(v[0]).then(function(dados){return juntaNaNuvem(dados)}).then(function(){antigosApagar();lsSet('fin-migrado:'+uid,'1');fechar();window.location.reload()})
+        .catch(function(x){erro(x==='senha'?'Senha incorreta.':'Não foi possível juntar os dados. Verifique a conexão e tente de novo.')})}});
+  }
+
+  /* atualizar a tela quando outro aparelho muda algo */
+  var pendente=false,primeira=true;
+  function podeRedesenhar(){var a=document.activeElement,dlg=document.getElementById('dlg');return !(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))&&!(dlg&&dlg.open)&&!document.querySelector('.trava')}
+  function tentaRender(){var F=window.__fin;if(!pendente||!F)return;var tela=F.S.tab;if(tela!=='lancar'&&podeRedesenhar()){pendente=false;var y=window.scrollY;F.render();window.scrollTo(0,y)}}
+  setInterval(tentaRender,1500);
+  function vivo(){if(vivoOn)return;vivoOn=true;col.onSnapshot(function(q){if(primeira){primeira=false;return}if(q.metadata.hasPendingWrites)return;var F=window.__fin;if(!F||!F.S.ready)return;var mud=false;
+    q.docChanges().forEach(function(ch){if(ch.type==='removed')return;var id=ch.doc.id,v=ch.doc.data();
+      if(id==='config'){['cats','tipos','bancos','cartoes'].forEach(function(k){if(Array.isArray(v[k])&&v[k].length)F.S.cfg[k]=v[k].slice()});mud=true}
+      else if(id.indexOf('m-')===0){F.S.docs[id.slice(2)]=F.norm(limpa(v));mud=true}});
+    if(mud){F.buildHist();pendente=true;tentaRender()}},function(){vivoOn=false})}
+
+  /* rodapé */
+  function rodape(aviso,erro){
     var f=document.querySelector('footer.bk');if(!f){f=document.createElement('footer');f.className='bk';document.body.insertBefore(f,document.getElementById('dlg'))}
-    var tem=!!meta();
-    f.innerHTML='<p id="bk-msg">'+(aviso||(tem?'Protegido por senha. Os dados ficam guardados só neste navegador e o site trava após '+MINUTOS+' minutos sem uso.':'Os dados ficam guardados só neste navegador. Exporte um backup de vez em quando.'))+'</p><div>'+
+    var tem=!!lockMeta();
+    f.innerHTML='<p id="bk-msg"'+(erro?' style="color:var(--out)"':'')+'>'+(aviso||('Sincronizado na conta '+esc2(email)+'. O que você lança aqui aparece em todos os aparelhos em que entrar com essa conta.'+(tem?' Este aparelho trava após '+MINUTOS+' minutos sem uso.':'')))+'</p><div>'+
       '<button class="ghost" data-bk="exp">Exportar backup</button><button class="ghost" data-bk="imp">Importar backup</button>'+
-      (tem?'<button class="ghost" data-bk="trava">Bloquear agora</button><button class="ghost" data-bk="muda">Alterar senha</button><button class="ghost" data-bk="tira">Remover senha</button>':'<button class="ghost" data-bk="cria">Criar senha</button>')+
-      '<input type="file" id="bk-file" accept="application/json,.json" hidden></div>';
+      (tem?'<button class="ghost" data-bk="trava">Bloquear agora</button><button class="ghost" data-bk="muda">Alterar senha</button><button class="ghost" data-bk="tira">Remover senha</button>':'<button class="ghost" data-bk="cria">Senha neste aparelho</button>')+
+      '<button class="ghost" data-bk="sair">Sair da conta</button><input type="file" id="bk-file" accept="application/json,.json" hidden></div>';
     f.querySelector('#bk-file').addEventListener('change',function(e){var a=e.target.files[0];if(a)importar(a)});
   }
-  function msg(t){var m=document.getElementById('bk-msg');if(m){m.textContent=t;m.style.color='var(--out)'}}
-  function exportar(){todos().then(function(o){var a=document.createElement('a'),d=new Date();a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));
-    a.download='financeiro-backup-'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'.json';document.body.appendChild(a);a.click();a.remove()}).catch(function(){msg('Não foi possível exportar.')})}
+  function esc2(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function exportar(){col.get().then(function(q){var o={};q.docs.forEach(function(d){o[d.id]=d.data()});var a=document.createElement('a'),d=new Date();
+    a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:'application/json'}));a.download='financeiro-backup-'+d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2)+'.json';
+    document.body.appendChild(a);a.click();a.remove()}).catch(function(){rodape('Não foi possível exportar. Verifique a conexão.',true)})}
   function importar(file){var r=new FileReader();
-    r.onload=function(){var o,validos={};try{o=JSON.parse(r.result)}catch(e){o=null}
-      if(o)Object.keys(o).forEach(function(id){if((id==='config'||/^m-\d{4}-\d{2}$/.test(id))&&o[id]&&typeof o[id]==='object'&&o[id].enc!==1)validos[id]=o[id]});
-      if(!Object.keys(validos).length){msg('Este arquivo não é um backup do Financeiro. Nada foi alterado.');return}
-      regrava(validos).then(function(){window.location.reload()}).catch(function(){msg('Não foi possível importar.')})};
-    r.onerror=function(){msg('Não foi possível ler o arquivo.')};r.readAsText(file)}
+    r.onload=function(){var o=null;try{o=JSON.parse(r.result)}catch(e){}
+      if(!o||typeof o!=='object'){rodape('Este arquivo não é um backup do Financeiro. Nada foi alterado.',true);return}
+      rodape('Juntando o backup com os dados da nuvem…');
+      juntaNaNuvem(o).then(function(n){if(!n){rodape('Este arquivo não é um backup do Financeiro. Nada foi alterado.',true);return}window.location.reload()}).catch(function(){rodape('Não foi possível importar. Verifique a conexão e tente de novo.',true)})};
+    r.onerror=function(){rodape('Não foi possível ler o arquivo.',true)};r.readAsText(file)}
+  function criarSenha(){painel({titulo:'Senha neste aparelho',texto:'A senha passa a ser pedida sempre que o site for aberto neste aparelho, e ele trava após '+MINUTOS+' minutos sem uso. Ela vale só para este aparelho e não muda nada nos outros.',campos:['Nova senha','Repita a senha'],botao:'Criar senha',cancelar:true,ok:function(v,erro,fechar){
+    var e=valida(v[0],v[1]);if(e)return erro(e);novaLock(v[0]).then(function(){fechar();rodape('Senha criada para este aparelho.');vigia()}).catch(function(){erro('Não foi possível criar a senha.')})}})}
+  function alterarSenha(){painel({titulo:'Alterar senha deste aparelho',campos:['Senha atual','Nova senha','Repita a nova senha'],botao:'Alterar senha',cancelar:true,ok:function(v,erro,fechar){
+    var e=valida(v[1],v[2]);if(e)return erro(e);confereLock(v[0]).then(function(){return novaLock(v[1])}).then(function(){fechar();rodape('Senha alterada.')}).catch(function(x){erro(x==='senha'?'Senha atual incorreta.':'Não foi possível alterar a senha.')})}})}
+  function removerSenha(){painel({titulo:'Remover senha deste aparelho',campos:['Senha atual'],botao:'Remover senha',cancelar:true,ok:function(v,erro,fechar){
+    confereLock(v[0]).then(function(){lsDel('fin-lock');fechar();rodape('Senha removida deste aparelho.')}).catch(function(){erro('Senha incorreta.')})}})}
+  function sair(){painel({titulo:'Sair da conta',texto:'Neste aparelho, o site volta a pedir o login com Google. Os dados continuam na nuvem.',botao:'Sair',cancelar:true,ok:function(v,erro){
+    lsDel('fin-lock');firebase.auth().signOut().then(function(){window.location.reload()}).catch(function(){erro('Não foi possível sair.')})}})}
   document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-bk]');if(!t)return;var a=t.dataset.bk;
-    if(a==='exp')exportar();else if(a==='imp')document.getElementById('bk-file').click();else if(a==='cria')criarSenha();else if(a==='muda')alterarSenha();else if(a==='tira')removerSenha();else if(a==='trava')window.location.reload()});
+    if(a==='exp')exportar();else if(a==='imp')document.getElementById('bk-file').click();else if(a==='cria')criarSenha();else if(a==='muda')alterarSenha();else if(a==='tira')removerSenha();else if(a==='trava')window.location.reload();else if(a==='sair')sair()});
+
+  /* entrada */
+  function entrar(){var p=painel({titulo:'Financeiro',texto:'Entre com a sua conta Google para ver e lançar. Os dados ficam sincronizados entre todos os aparelhos em que você entrar com a mesma conta.',botao:'Entrar com Google',ok:function(v,erro){
+    var prov=new firebase.auth.GoogleAuthProvider();prov.setCustomParameters({prompt:'select_account'});
+    firebase.auth().signInWithPopup(prov).catch(function(e){var c=e&&e.code||'';
+      if(c==='auth/popup-blocked'||c==='auth/operation-not-supported-in-this-environment')return firebase.auth().signInWithRedirect(prov);
+      if(c==='auth/unauthorized-domain')return erro('Este endereço ainda não está autorizado no Firebase. Em Authentication, Configurações, Domínios autorizados, adicione '+location.hostname+'.');
+      if(c==='auth/popup-closed-by-user'||c==='auth/cancelled-popup-request')return erro('');
+      erro('Não foi possível entrar ('+(c||'erro')+').')})}});
+    return p}
+  function depoisDoLogin(u){uid=u.uid;email=u.email||'';col=firebase.firestore().collection('users').doc(uid).collection('fin');
+    var segue=function(){rodape();vigia();vivo();liberar();setTimeout(ofereceMigrar,800)};
+    if(lockMeta())painel({titulo:'Financeiro',texto:'Digite a senha deste aparelho para abrir.',campos:['Senha'],botao:'Entrar',ok:function(v,erro,fechar){
+      confereLock(v[0]).then(function(){fechar();segue()}).catch(function(){erro('Senha incorreta.')})}});
+    else segue()}
   document.addEventListener('DOMContentLoaded',function(){
-    if(meta()){if(!(window.crypto&&crypto.subtle)){document.body.insertAdjacentHTML('beforeend','<div class="trava"><div class="tv-cx"><h2>Financeiro</h2><p>Este navegador não permite abrir os dados protegidos por senha. Abra o site pelo endereço https.</p></div></div>');return}destravar()}
-    else{rodape();liberar()}
+    if(!window.firebase||!firebase.initializeApp){tela('Financeiro','Não foi possível carregar o Firebase. Verifique a conexão com a internet e recarregue a página.');return}
+    var c=conf();if(!c){pedeConfig();return}
+    try{firebase.initializeApp(c)}catch(e){tela('Financeiro','Os dados do projeto Firebase estão incorretos. Apague-os e cole de novo.');lsDel('fin-fbconfig');return}
+    var aberto=null,ja=false;
+    firebase.auth().onAuthStateChanged(function(u){if(u){if(aberto){aberto.fechar();aberto=null}if(!ja){ja=true;depoisDoLogin(u)}}else if(!aberto&&!ja)aberto=entrar()});
   });
 })();
 </script>
@@ -707,7 +768,7 @@ function render(){
   $('.ml').textContent=window.innerWidth<760?MES[+S.ym.split('-')[1]-1].slice(0,3)+' '+S.ym.split('-')[0]:ymLabel(S.ym);$('.ml').setAttribute('aria-label',ymLabel(S.ym));document.body.dataset.tela=S.tab;
   $('.monthnav').style.visibility=(S.tab==='lancar'&&S.modo!=='completo')?'hidden':'visible';
   document.querySelectorAll('.tabs button').forEach(function(b){b.setAttribute('aria-selected',b.dataset.tab===S.tab?'true':'false')});
-  if(S.err==='semdb'){view.innerHTML='<div class="panel"><h2>Não foi possível abrir seus dados</h2><p>O navegador bloqueou o armazenamento de dados deste site. Saia do modo anônimo ou libere o armazenamento e recarregue a página.</p></div>';return}
+  if(S.err==='semdb'){view.innerHTML='<div class="panel"><h2>Não foi possível abrir seus dados</h2><p>Entre com a sua conta Google para ver os lançamentos.</p></div>';return}
   if(S.err==='load'){view.innerHTML='<div class="panel"><h2>Os dados não carregaram</h2><p>Verifique a conexão e recarregue a página. Nada foi alterado.</p></div>';return}
   if(!S.ready){view.innerHTML='<p class="muted">Carregando seus lançamentos…</p>';return}
   if(S.tab==='lancar')renderLancar();else if(S.tab==='resumo')renderResumo();else if(S.tab==='mes')renderMes();else renderAno();
@@ -1258,7 +1319,7 @@ function init(){
     S.ready=true;buildHist();render();
   }).catch(function(e){S.err=(e&&e.semdb)?'semdb':'load';render()});
 }
-window.__fin={S:S};
+window.__fin={S:S,render:render,norm:norm,buildHist:buildHist};
 init();
 })();
 </script>
