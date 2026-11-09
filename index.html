@@ -431,6 +431,14 @@ dialog h2{margin-bottom:.4rem}
 .lrow.csel{grid-template-columns:1.3rem minmax(0,1fr) auto;cursor:pointer}
 .lrow.csel.on{background:color-mix(in srgb,var(--sinal) 14%,var(--surface))}
 @media (max-width:759px){.selacts{margin-left:0;width:100%}.selacts button{flex:1}}
+.prow{grid-template-columns:.55rem minmax(0,1fr) auto auto auto}
+.lanca{min-height:1.8rem;padding:.15rem .6rem;font-size:.85rem;align-self:center}
+.lanca:hover{background:var(--sinal);border-color:var(--sinal);color:var(--sinal-ink)}
+.arow.sem{grid-template-columns:minmax(0,1fr) auto auto}
+.rbtn{margin:.35rem 0 .1rem}
+.rlin small{font-family:Barlow,system-ui,sans-serif;font-size:.8rem;font-weight:500}
+.rconta.rrec{background:color-mix(in srgb,var(--in) 14%,var(--surface));color:var(--in)}
+.rconta.rrec .num{color:var(--in)}
 </style>
 </head>
 <body>
@@ -526,7 +534,7 @@ dialog h2{margin-bottom:.4rem}
   /* juntar dados sem apagar nada */
   function junta(id,a,b){if(!a)return limpa(b);if(!b)return a;var o=limpa(a);
     if(id==='config'){['cats','tipos','bancos','cartoes'].forEach(function(k){var l=o[k]||[];(b[k]||[]).forEach(function(x){if(l.indexOf(x)<0)l.push(x)});o[k]=l});return o}
-    ['rec','desp','card','prev','receber'].forEach(function(k){var l=o[k]||[],ids={};l.forEach(function(x){ids[x.id]=1});(b[k]||[]).forEach(function(x){if(!ids[x.id]){l.push(x);ids[x.id]=1}});o[k]=l});
+    ['rec','desp','card','prev','receber','reembRec'].forEach(function(k){var l=o[k]||[],ids={};l.forEach(function(x){ids[x.id]=1});(b[k]||[]).forEach(function(x){if(!ids[x.id]){l.push(x);ids[x.id]=1}});o[k]=l});
     ['anaPago','reembPago'].forEach(function(k){if(b[k]){o[k]=o[k]||{};Object.keys(b[k]).forEach(function(x){if(b[k][x])o[k][x]=true})}});
     var na=(o.notas||'').trim(),nb=(b.notas||'').trim();if(nb&&na.indexOf(nb)<0)o.notas=nb.indexOf(na)>=0?nb:(na?na+'\n'+nb:nb);
     if(!o.ym&&b.ym)o.ym=b.ym;return o}
@@ -938,31 +946,37 @@ function renderMes(){
   h+='<section class="bloco"><h2>Despesas por categoria</h2>'+(cl.length?donut(cl,'Despesas por categoria em '+ymLabel(ym),u.cat,true):'<p class="empty">Aparece quando houver despesas no mês.</p>')+'</section>';
   h+='<section class="bloco"><header><h2>Previsão</h2><button class="addbtn" data-add="prev" aria-label="Adicionar previsão">+</button></header>';
   if(d.prev.length){h+=d.prev.map(function(it){
-      return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+delBtn('prev',ym,it)+'</div>'}).join('');
+      return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+'<button class="ghost lanca" data-lprev="'+ym+'|'+esc(it.id)+'" title="Lançar agora como '+(it.t==='E'?'receita':'despesa')+'">Lançar</button>'+delBtn('prev',ym,it)+'</div>'}).join('');
     h+='<div class="lfoot"><span class="muted">Saldo futuro</span><span class="num">'+brl(t.futuro)+'</span></div>'}
   else h+='<p class="empty">Sem previsões. O saldo futuro fica igual ao atual.</p>';
   h+='</section>';
-  var rlist=reembMes(ym),grp={},ordem=[],exp=!!S.ui.reExp;
-  rlist.forEach(function(r){var k=r.pes.trim().toLowerCase();if(!grp[k]){grp[k]={nome:r.pes.trim(),it:[]};ordem.push(k)}grp[k].it.push(r)});
-  var faltaDe=function(l){return sum(l,function(x){return x.pago?0:x.v})};
-  ordem.sort(function(a,b){return faltaDe(grp[b].it)-faltaDe(grp[a].it)||grp[a].nome.localeCompare(grp[b].nome,'pt-BR')});
+  var rlist=reembMes(ym),grp={},ordem=[],exp=!!S.ui.reExp,pgs=d.reembRec||[];
+  var kp=function(n){return (n||'').trim().toLowerCase()},nov=function(n){var k=kp(n);if(!grp[k]){grp[k]={nome:(n||'').trim(),it:[],pg:[]};ordem.push(k)}return grp[k]};
+  rlist.forEach(function(r){nov(r.pes).it.push(r)});pgs.forEach(function(p){nov(p.pes).pg.push(p)});
+  var totG=function(g){return sum(g.it,function(x){return x.v})},recG=function(g){return sum(g.pg,function(x){return x.v})+sum(g.it,function(x){return x.pago?x.v:0})},falG=function(g){return totG(g)-recG(g)};
+  ordem.sort(function(a,b){return falG(grp[b])-falG(grp[a])||grp[a].nome.localeCompare(grp[b].nome,'pt-BR')});
   var contaNome=function(c){return c==='BB'?'Banco do Brasil':c==='Nubank'?'Nubank':c==='Dinheiro'?'Dinheiro':'Conta não informada'};
-  h+='<section class="bloco reemb"><header><h2>Reembolsos</h2><div class="hacoes">'+(rlist.length?'<button class="ghost pdfbtn" data-reexp aria-expanded="'+exp+'">'+(exp?'Resumir':'Expandir')+'</button>':'')+'<button class="addbtn" data-add="receber" aria-label="Adicionar reembolso">+</button></div></header>';
-  if(rlist.length){
-    h+=ordem.map(function(k){var g=grp[k],fp=faltaDe(g.it),cts={},co=[];
+  h+='<section class="bloco reemb"><header><h2>Reembolsos</h2><div class="hacoes">'+(ordem.length?'<button class="ghost pdfbtn" data-reexp aria-expanded="'+exp+'">'+(exp?'Resumir':'Expandir')+'</button>':'')+'<button class="addbtn" data-add="receber" aria-label="Adicionar reembolso">+</button></div></header>';
+  if(ordem.length){
+    h+=ordem.map(function(k){var g=grp[k],f=falG(g),cts={},co=[];
       g.it.forEach(function(r){var c=r.conta||'';if(!cts[c]){cts[c]=[];co.push(c)}cts[c].push(r)});
       co.sort(function(a,b){return (a===''?1:0)-(b===''?1:0)||a.localeCompare(b)});
-      var x='<div class="rpes'+(fp?'':' quitado')+'"><div class="rlin"><b>'+esc(g.nome)+'</b><span class="val">'+brl(fp)+'</span></div>';
-      if(!exp){var sp=co.filter(function(c){return faltaDe(cts[c])>0}).map(function(c){return '<span>'+esc(contaNome(c))+' <span class="num">'+brl(faltaDe(cts[c]))+'</span></span>'});
-        x+='<div class="rsub">'+(fp?sp.join(''):'<span>Tudo recebido</span>')+'</div>'}
-      else co.forEach(function(c){
-        x+='<div class="rconta'+(c==='BB'||c==='Nubank'?' '+c:'')+'"><span>Para '+esc(contaNome(c))+'</span><span class="num">'+brl(faltaDe(cts[c]))+'</span></div>';
-        var gs={},go=[];cts[c].forEach(function(r){var k=(r.d||'').toLowerCase().replace(/[^a-z0-9à-ú]/g,'')+'|'+(r.orig||'');if(!gs[k]){gs[k]=[];go.push(k)}gs[k].push(r)});
-        x+=go.map(function(k){var l=gs[k],r=l[0],n=l.length,tv=sum(l,function(z){return z.v}),pg=l.filter(function(z){return z.pago}).length,todos=pg===n,parte=pg>0&&!todos;
-          if(n===1)return '<div class="arow'+(r.pago?' pago':'')+'"><input type="checkbox" aria-label="Recebido: '+esc(r.d)+'" data-pago="'+esc(r.pid)+'"'+(r.pago?' checked':'')+'><span class="nm" tabindex="0" data-edit="'+esc(r.ed)+'"><b title="Dois cliques para renomear">'+esc(r.d)+'</b>'+(r.orig?'<i class="chip">'+esc(r.orig)+(r.modo==='metade'?', metade':'')+'</i>':notaHTML(r.man))+'</span><span class="val">'+brl(r.v)+'</span>'+(r.man?delBtn('receber',ym,r.man):'<span></span>')+'</div>';
-          return '<div class="arow'+(todos?' pago':'')+'"><input type="checkbox" aria-label="Recebido: '+esc(r.d)+', '+n+' lançamentos" data-pago="'+esc(l.map(function(z){return z.pid}).join(','))+'"'+(todos?' checked':'')+(parte?' data-parte="1"':'')+'><span class="nm"><b>'+esc(r.d)+'</b><i class="chip">'+n+(r.man?' lançamentos':' compras')+(r.orig?' no '+esc(r.orig):'')+(parte?', recebido '+pg+' de '+n:'')+'</i></span><span class="val">'+brl(tv)+'</span><span></span></div>'}).join('')});
+      var x='<div class="rpes'+(f<=0.004?' quitado':'')+'"><div class="rlin"><b>'+esc(g.nome)+'</b><span class="val">'+(f<-0.004?'<small class="muted">pago a mais </small>'+brl(-f):brl(Math.max(f,0)))+'</span></div>';
+      x+='<div class="rsub"><span>Total <span class="num">'+brl(totG(g))+'</span></span><span>Recebido <span class="num">'+brl(recG(g))+'</span></span></div>';
+      x+='<p class="rbtn"><button class="ghost pdfbtn" data-rpag="'+esc(g.nome)+'">Registrar valor recebido</button></p>';
+      if(exp){
+        co.forEach(function(c){
+          x+='<div class="rconta'+(c==='BB'||c==='Nubank'?' '+c:'')+'"><span>Para '+esc(contaNome(c))+'</span><span class="num">'+brl(sum(cts[c],function(z){return z.v}))+'</span></div>';
+          var gs={},go=[];cts[c].forEach(function(r){var kk=(r.d||'').toLowerCase().replace(/[^a-z0-9à-ú]/g,'')+'|'+(r.orig||'');if(!gs[kk]){gs[kk]=[];go.push(kk)}gs[kk].push(r)});
+          x+=go.map(function(kk){var l=gs[kk],r=l[0],n=l.length,tv=sum(l,function(z){return z.v});
+            if(n===1)return '<div class="arow sem'+(r.pago?' pago':'')+'"><span class="nm" tabindex="0" data-edit="'+esc(r.ed)+'"><b title="Dois cliques para renomear">'+esc(r.d)+'</b>'+(r.orig?'<i class="chip">'+esc(r.orig)+(r.modo==='metade'?', metade':'')+'</i>':notaHTML(r.man))+'</span><span class="val">'+brl(r.v)+'</span>'+(r.man?delBtn('receber',ym,r.man):'<span></span>')+'</div>';
+            return '<div class="arow sem"><span class="nm"><b>'+esc(r.d)+'</b><i class="chip">'+n+(r.man?' lançamentos':' compras')+(r.orig?' no '+esc(r.orig):'')+'</i></span><span class="val">'+brl(tv)+'</span><span></span></div>'}).join('')});
+        if(g.pg.length){x+='<div class="rconta rrec"><span>Já recebido</span><span class="num">'+brl(sum(g.pg,function(z){return z.v}))+'</span></div>'+
+          g.pg.slice().sort(function(a,b){return (b.dt||'')<(a.dt||'')?-1:1}).map(function(p){return '<div class="arow sem"><span class="nm"><b>'+(p.dt?fmtData(p.dt):'Sem data')+'</b><i class="chip">'+esc(contaNome(p.conta))+(p.recId?', lançado como receita':'')+'</i></span><span class="val in">+'+brl(p.v)+'</span><button class="del" data-delpg="'+esc(p.id)+'" aria-label="Apagar recebimento de '+brl(p.v)+'" title="Apagar">'+ICDEL+'</button></div>'}).join('')}
+      }
       return x+'</div>'}).join('');
-    h+='<div class="lfoot"><span class="muted">Total <span class="num">'+brl(sum(rlist,function(x){return x.v}))+'</span></span><span>Falta receber <span class="num">'+brl(faltaDe(rlist))+'</span></span></div>'}
+    var tt=sum(ordem,function(k){return totG(grp[k])}),tr=sum(ordem,function(k){return recG(grp[k])}),tf=sum(ordem,function(k){return Math.max(falG(grp[k]),0)});
+    h+='<div class="lfoot"><span class="muted">Total <span class="num">'+brl(tt)+'</span></span><span class="muted">Recebido <span class="num">'+brl(tr)+'</span></span><span>Falta receber <span class="num">'+brl(tf)+'</span></span></div>'}
   else h+='<p class="empty">Nenhum reembolso neste mês.</p>';
   h+='</section></aside>';
   // faturas
@@ -1004,7 +1018,7 @@ function renderResumo(){
   // previsões
   h+='<section class="card c7"><header><h2>Previsões</h2><button class="addbtn" data-add="prev" aria-label="Adicionar previsão">+</button></header>';
   if(d.prev.length){h+=d.prev.map(function(it){
-      return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+delBtn('prev',ym,it)+'</div>'}).join('');
+      return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+'<button class="ghost lanca" data-lprev="'+ym+'|'+esc(it.id)+'" title="Lançar agora como '+(it.t==='E'?'receita':'despesa')+'">Lançar</button>'+delBtn('prev',ym,it)+'</div>'}).join('');
     h+='<div class="lfoot"><span>A entrar <span class="num in">'+brl(t.fe)+'</span></span><span>A sair <span class="num out">'+brl(t.fs)+'</span></span>'+((t.pe||t.ps)?'<span class="muted">Possíveis <span class="num">+'+brl(t.pe)+' / −'+brl(t.ps)+'</span></span>':'')+'</div>'}
   else h+='<p class="empty">Nenhuma previsão em '+esc(ymLabel(ym))+'. Sem previsões, o saldo futuro fica igual ao atual.</p>';
   h+='</section>';
@@ -1226,6 +1240,36 @@ document.addEventListener('change',function(e){var t=e.target;if(!S.ui||!S.ui.se
     var tod=$('[data-csel-todas]');if(tod){var l=cardsDoBanco(S.ui.selCard);tod.checked=l.length>0&&l.every(function(c){return S.ui.sel[c.it.id]})}selAtualiza();return}
   if(t.dataset&&t.dataset.cselTodas!=null){S.ui.sel={};if(t.checked)cardsDoBanco(S.ui.selCard).forEach(function(c){S.ui.sel[c.it.id]=c.o});reRenderMes()}});
 document.addEventListener('keydown',function(e){if(e.key==='Enter'&&e.target.id==='m-pes'){e.preventDefault();okReembLote()}});
+
+/* ---------- previsões: lançar com um clique ---------- */
+function lancarPrev(ym,id,btn){var p=findItem('prev',ym,id);if(!p||S.busy)return;S.busy=true;if(btn)btn.disabled=true;
+  var hj=hojeISO(),k=p.t==='E'?'rec':'desp',it={id:uid(),d:p.d,v:p.v};if(hj.slice(0,7)===ym)it.dt=hj;if(p.obs)it.obs=p.obs;if(k==='rec')it.t='';else it.c='';
+  mutate(ym,function(d){d.prev=d.prev.filter(function(x){return x.id!==id});d[k].push(it)})
+    .then(function(){S.busy=false;toast((k==='rec'?'Receita lançada: ':'Despesa lançada: ')+p.d+' '+brl(p.v));var y=window.scrollY;render();window.scrollTo(0,y)})
+    .catch(function(){S.busy=false;if(btn)btn.disabled=false;toast('Não foi possível lançar. Tente de novo.')})}
+/* ---------- reembolsos: valor recebido ---------- */
+function abrirPagto(pes){var ym=S.ym,l=reembMes(ym).filter(function(r){return r.pes.trim().toLowerCase()===pes.trim().toLowerCase()}),cont={};
+  l.forEach(function(r){if(r.conta)cont[r.conta]=(cont[r.conta]||0)+r.v});var sug=Object.keys(cont).sort(function(a,b){return cont[b]-cont[a]})[0]||'Nubank';
+  var hj=hojeISO(),dt=hj.slice(0,7)===ym?hj:'';
+  dlg.innerHTML='<h2>Valor recebido de '+esc(pes)+'</h2><p class="hint" style="margin:0 0 .6rem">Informe quanto '+esc(pes)+' já mandou. O valor é descontado do total devido em '+esc(ymLabel(ym))+'.</p>'+
+    '<div class="valor"><span>R$</span><input id="r-v" inputmode="decimal" autocomplete="off" placeholder="0,00" aria-label="Valor recebido"></div>'+
+    '<div class="field"><label for="r-dt">Data</label><input type="date" id="r-dt" value="'+dt+'"></div>'+
+    '<div class="field"><span class="lab">Entrou na conta</span>'+seg('r-conta',[['BB','Banco do Brasil'],['Nubank','Nubank'],['Dinheiro','Dinheiro']],sug)+'</div>'+
+    '<div class="field"><label class="check"><input type="checkbox" id="r-rec" checked> Lançar também como receita (Reembolso) neste mês</label></div>'+
+    '<div class="err" id="r-err"></div><div class="dlgbtns"><button class="primary" id="r-ok">Registrar</button><button class="ghost" id="e-cancel">Cancelar</button></div>';
+  dlg.dataset.k='';dlg.dataset.id='';dlg.dataset.pes=pes;if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','');$('#r-v').focus()}
+function okPagto(){if(S.busy)return;var v=parseValor($('#r-v').value);if(isNaN(v)||v<=0){$('#r-err').textContent='Informe o valor recebido.';$('#r-v').focus();return}
+  v=Math.round(v*100)/100;var pes=dlg.dataset.pes,dt=$('#r-dt').value,ce=document.querySelector('input[name="r-conta"]:checked'),conta=ce?ce.value:'',comRec=$('#r-rec').checked,ym=S.ym,id=uid(),p={id:id,pes:pes,v:v,conta:conta};if(dt)p.dt=dt;
+  S.busy=true;$('#r-ok').disabled=true;
+  mutate(ym,function(d){d.reembRec=d.reembRec||[];if(comRec){var r={id:uid(),d:'Reembolso '+pes,t:'Reembolso',v:v,rr:id};if(dt)r.dt=dt;d.rec.push(r);p.recId=r.id}d.reembRec.push(p)})
+    .then(function(){S.busy=false;dlg.close();toast('Recebimento de '+pes+' registrado: '+brl(v));var y=window.scrollY;render();window.scrollTo(0,y)})
+    .catch(function(){S.busy=false;$('#r-ok').disabled=false;$('#r-err').textContent='Não foi possível salvar. Tente de novo.'})}
+function apagaPagto(id,btn){if(!btn.dataset.sure){btn.dataset.sure='1';btn.classList.add('sure');btn.textContent='Apagar?';setTimeout(function(){if(btn.isConnected&&btn.dataset.sure){delete btn.dataset.sure;btn.classList.remove('sure');btn.innerHTML=ICDEL}},4000);return}
+  btn.disabled=true;mutate(S.ym,function(d){var p=(d.reembRec||[]).filter(function(x){return x.id===id})[0];d.reembRec=(d.reembRec||[]).filter(function(x){return x.id!==id});if(p&&p.recId)d.rec=d.rec.filter(function(x){return x.id!==p.recId})})
+    .then(function(){toast('Recebimento apagado');var y=window.scrollY;render();window.scrollTo(0,y)}).catch(function(){btn.disabled=false;toast('Não foi possível apagar')})}
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-lprev],[data-rpag],[data-delpg],#r-ok');if(!t||!S.ready)return;e.stopPropagation();e.preventDefault();
+  if(t.dataset.lprev){var q=t.dataset.lprev.split('|');lancarPrev(q[0],q[1],t)}else if(t.dataset.rpag!=null)abrirPagto(t.dataset.rpag);else if(t.dataset.delpg)apagaPagto(t.dataset.delpg,t);else if(t.id==='r-ok')okPagto()},true);
+document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.target.id==='r-v'||e.target.id==='r-dt')){e.preventDefault();okPagto()}});
 
 /* ---------- ações ---------- */
 function lancar(){
