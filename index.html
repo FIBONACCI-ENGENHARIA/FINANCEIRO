@@ -439,6 +439,11 @@ dialog h2{margin-bottom:.4rem}
 .rlin small{font-family:Barlow,system-ui,sans-serif;font-size:.8rem;font-weight:500}
 .rconta.rrec{background:color-mix(in srgb,var(--in) 14%,var(--surface));color:var(--in)}
 .rconta.rrec .num{color:var(--in)}
+.prow.fat .nm b{color:var(--ink)}
+.fsplit{display:flex;flex-wrap:wrap;gap:.4rem 1.6rem;margin-top:.6rem;padding:.6rem .7rem;background:var(--soft);border-radius:6px}
+.fsplit small{display:block;color:var(--muted);font-size:.85rem}
+.fsplit b{font-family:var(--cond);font-size:1.3rem;font-weight:600}
+.fsplit div:first-child b{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -535,7 +540,9 @@ dialog h2{margin-bottom:.4rem}
   function junta(id,a,b){if(!a)return limpa(b);if(!b)return a;var o=limpa(a);
     if(id==='config'){['cats','tipos','bancos','cartoes'].forEach(function(k){var l=o[k]||[];(b[k]||[]).forEach(function(x){if(l.indexOf(x)<0)l.push(x)});o[k]=l});return o}
     ['rec','desp','card','prev','receber','reembRec'].forEach(function(k){var l=o[k]||[],ids={};l.forEach(function(x){ids[x.id]=1});(b[k]||[]).forEach(function(x){if(!ids[x.id]){l.push(x);ids[x.id]=1}});o[k]=l});
-    ['anaPago','reembPago'].forEach(function(k){if(b[k]){o[k]=o[k]||{};Object.keys(b[k]).forEach(function(x){if(b[k][x])o[k][x]=true})}});
+    if(b.fatAjuste){o.fatAjuste=o.fatAjuste||{};Object.keys(b.fatAjuste).forEach(function(x){if(o.fatAjuste[x]==null)o.fatAjuste[x]=b.fatAjuste[x]})}
+    if(b.reAjuste){o.reAjuste=o.reAjuste||{};Object.keys(b.reAjuste).forEach(function(x){if(o.reAjuste[x]==null)o.reAjuste[x]=b.reAjuste[x]})}
+    ['anaPago','reembPago','fatPaga','fatOculta','reOculta'].forEach(function(k){if(b[k]){o[k]=o[k]||{};Object.keys(b[k]).forEach(function(x){if(b[k][x])o[k][x]=true})}});
     var na=(o.notas||'').trim(),nb=(b.notas||'').trim();if(nb&&na.indexOf(nb)<0)o.notas=nb.indexOf(na)>=0?nb:(na?na+'\n'+nb:nb);
     if(!o.ym&&b.ym)o.ym=b.ym;return o}
   function juntaNaNuvem(dados){var ids=Object.keys(dados).filter(function(id){return (id==='config'||/^m-\d{4}-\d{2}$/.test(id))&&dados[id]&&typeof dados[id]==='object'});
@@ -681,6 +688,7 @@ function cardFor(ym){var out=[];Object.keys(S.docs).forEach(function(k){var diff
   return out}
 function totais(ym){var d=doc(ym);var r=sum(d.rec,function(x){return x.v}),g=sum(d.desp,function(x){return x.v});
   var fe=0,fs=0,pe=0,ps=0;d.prev.forEach(function(x){if(x.t==='E'){if(x.c)fe+=x.v;else pe+=x.v}else{if(x.c)fs+=x.v;else ps+=x.v}});
+  fatAuto(ym).forEach(function(f){fs+=f.v});reAuto(ym).forEach(function(x){fe+=x.v});
   var atual=r-g,fut=atual+fe-fs;return {rec:r,desp:g,atual:atual,futuro:fut,possivel:fut+pe-ps,fe:fe,fs:fs,pe:pe,ps:ps}}
 
 /* ---------- formulário (novo e edição) ---------- */
@@ -945,7 +953,7 @@ function renderMes(){
   var cl=Object.keys(cat).map(function(c){return [c,cat[c]]}).filter(function(x){return x[1]>0}).sort(function(a,b){return b[1]-a[1]});
   h+='<section class="bloco"><h2>Despesas por categoria</h2>'+(cl.length?donut(cl,'Despesas por categoria em '+ymLabel(ym),u.cat,true):'<p class="empty">Aparece quando houver despesas no mês.</p>')+'</section>';
   h+='<section class="bloco"><header><h2>Previsão</h2><button class="addbtn" data-add="prev" aria-label="Adicionar previsão">+</button></header>';
-  if(d.prev.length){h+=d.prev.map(function(it){
+  var fatH=reRows(ym)+fatRows(ym);if(d.prev.length||fatH){h+=fatH+d.prev.map(function(it){
       return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+'<button class="ghost lanca" data-lprev="'+ym+'|'+esc(it.id)+'" title="Lançar agora como '+(it.t==='E'?'receita':'despesa')+'">Lançar</button>'+delBtn('prev',ym,it)+'</div>'}).join('');
     h+='<div class="lfoot"><span class="muted">Saldo futuro</span><span class="num">'+brl(t.futuro)+'</span></div>'}
   else h+='<p class="empty">Sem previsões. O saldo futuro fica igual ao atual.</p>';
@@ -996,6 +1004,9 @@ function renderMes(){
         if(emSel){var on=!!u.sel[c.it.id];return '<label class="lrow csel'+(on?' on':'')+'"><input type="checkbox" data-csel="'+esc(c.it.id)+'|'+c.o+'"'+(on?' checked':'')+' aria-label="Selecionar '+esc(c.it.d)+'"><span class="nm"><b>'+esc(c.it.d)+'</b>'+chs+'</span><span class="val">'+brl(c.it.v)+'</span></label>'}
         return lrow('card',c.o,c.it,chs,'<span class="val">'+brl(c.it.v)+'</span>')}).join('')+'</div>':'<p class="empty">Nenhuma compra nesse filtro.</p>';
       h+='<div class="lfoot"><span class="muted">'+vis.length+(vis.length>1?' compras':' compra')+(nx?', '+nx+' fora do total':'')+'</span><span class="num">'+brl(st(vis))+'</span></div>';
+      var partes={Ana:0},ordP=['Ana'];l.forEach(function(c){if(c.it.x)return;var r=reembDe(c.it);if(!r)return;var n=(r.pes||'').trim();var kk=Object.keys(partes).filter(function(z){return z.toLowerCase()===n.toLowerCase()})[0]||n;if(partes[kk]==null){partes[kk]=0;ordP.push(kk)}partes[kk]+=r.modo==='metade'?c.it.v/2:c.it.v});
+      var totF=st(l),outros=sum(ordP,function(z){return partes[z]});
+      h+='<div class="fsplit" aria-label="Divisão da fatura"><div><small>Eu pago</small><b class="num">'+brl(totF-outros)+'</b></div>'+ordP.map(function(z){return '<div><small>'+esc(z)+'</small><b class="num">'+brl(partes[z])+'</b></div>'}).join('')+'</div>';
     }else h+='<p class="empty">Nenhuma compra neste cartão em '+esc(ymLabel(ym))+'.</p>';
     h+='</section>';
   });
@@ -1017,7 +1028,7 @@ function renderResumo(){
      sal('Saldo possível',t.possivel,'O saldo futuro mais as previsões ainda incertas.','');
   // previsões
   h+='<section class="card c7"><header><h2>Previsões</h2><button class="addbtn" data-add="prev" aria-label="Adicionar previsão">+</button></header>';
-  if(d.prev.length){h+=d.prev.map(function(it){
+  var fatH=reRows(ym)+fatRows(ym);if(d.prev.length||fatH){h+=fatH+d.prev.map(function(it){
       return '<div class="prow" tabindex="0" data-edit="prev|'+ym+'|'+esc(it.id)+'"><span class="dot'+(it.t==='E'?'':' s')+'"></span><span class="nm"><b>'+esc(it.d)+'</b>'+notaHTML(it)+(it.c?'':'<i class="chip w">possível</i>')+'</span><span class="val '+(it.t==='E'?'in':'out')+'">'+(it.t==='E'?'+':'−')+brl(it.v)+'</span>'+'<button class="ghost lanca" data-lprev="'+ym+'|'+esc(it.id)+'" title="Lançar agora como '+(it.t==='E'?'receita':'despesa')+'">Lançar</button>'+delBtn('prev',ym,it)+'</div>'}).join('');
     h+='<div class="lfoot"><span>A entrar <span class="num in">'+brl(t.fe)+'</span></span><span>A sair <span class="num out">'+brl(t.fs)+'</span></span>'+((t.pe||t.ps)?'<span class="muted">Possíveis <span class="num">+'+brl(t.pe)+' / −'+brl(t.ps)+'</span></span>':'')+'</div>'}
   else h+='<p class="empty">Nenhuma previsão em '+esc(ymLabel(ym))+'. Sem previsões, o saldo futuro fica igual ao atual.</p>';
@@ -1270,6 +1281,69 @@ function apagaPagto(id,btn){if(!btn.dataset.sure){btn.dataset.sure='1';btn.class
 document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-lprev],[data-rpag],[data-delpg],#r-ok');if(!t||!S.ready)return;e.stopPropagation();e.preventDefault();
   if(t.dataset.lprev){var q=t.dataset.lprev.split('|');lancarPrev(q[0],q[1],t)}else if(t.dataset.rpag!=null)abrirPagto(t.dataset.rpag);else if(t.dataset.delpg)apagaPagto(t.dataset.delpg,t);else if(t.id==='r-ok')okPagto()},true);
 document.addEventListener('keydown',function(e){if(e.key==='Enter'&&(e.target.id==='r-v'||e.target.id==='r-dt')){e.preventDefault();okPagto()}});
+
+/* ---------- fatura do cartão como previsão automática ---------- */
+function fatKw(b){return b==='BB'?/\b(bb|banco do brasil|ourocard)\b/i:b==='Nubank'?/\bnu(bank)?\b/i:new RegExp(b.replace(/[^\w ]/g,''),'i')}
+function fatTotal(ym,b){return Math.round(sum(cardFor(ym).filter(function(c){return c.it.b===b}),function(c){return c.it.x?0:c.it.v})*100)/100}
+function fatAuto(ym){if(ym<HOJE_YM)return [];var d=doc(ym),aj=d.fatAjuste||{},pg=d.fatPaga||{},oc=d.fatOculta||{},out=[],bancos=S.cfg.cartoes.slice();
+  cardFor(ym).forEach(function(c){if(bancos.indexOf(c.it.b)<0)bancos.push(c.it.b)});
+  bancos.forEach(function(b){if(pg[b]||oc[b])return;var tot=fatTotal(ym,b),v=aj[b]!=null?aj[b]:tot;if(!(v>0))return;var kw=fatKw(b);
+    if(d.prev.some(function(p){return p.t!=='E'&&/fatura/i.test(p.d||'')&&(kw.test(p.d||'')||Math.abs(p.v-tot)<0.02)}))return;
+    if(d.desp.some(function(x){return (x.c==='Cartão'||/fatura/i.test(x.d||''))&&(kw.test(x.d||'')||Math.abs(x.v-tot)<1)}))return;
+    out.push({b:b,d:'Fatura cartão '+(NOMEC[b]||b),v:v,tot:tot,aj:aj[b]!=null})});
+  return out}
+function fatRows(ym){return fatAuto(ym).map(function(f){
+  return '<div class="prow fat" tabindex="0" data-fat="'+esc(f.b)+'"><span class="dot s"></span><span class="nm"><b>'+esc(f.d)+'</b><i class="chip">'+(f.aj?'valor ajustado, fatura '+brl(f.tot):'automático, pela fatura')+'</i></span><span class="val out">−'+brl(f.v)+'</span>'+
+    '<button class="ghost lanca" data-lfat="'+esc(f.b)+'" title="Lançar o pagamento da fatura como despesa">Lançar</button><button class="del" data-ofat="'+esc(f.b)+'" aria-label="Tirar esta previsão de '+esc(ymLabel(ym))+'" title="Tirar deste mês">'+ICDEL+'</button></div>'}).join('')}
+function abrirFat(b){var ym=S.ym,f=fatAuto(ym).filter(function(x){return x.b===b})[0];if(!f)return;
+  dlg.innerHTML='<h2>'+esc(f.d)+'</h2><p class="hint" style="margin:0 0 .6rem">Previsão automática de '+esc(ymLabel(ym))+'. A fatura soma '+brl(f.tot)+'. Altere o valor se o pagamento for diferente.</p>'+
+    '<div class="valor"><span>R$</span><input id="f-v" inputmode="decimal" autocomplete="off" value="'+Number(f.v).toFixed(2).replace('.',',')+'" aria-label="Valor previsto"></div>'+
+    '<div class="err" id="f-err"></div><div class="dlgbtns"><button class="primary" id="f-ok">Salvar valor</button>'+(f.aj?'<button class="ghost" id="f-reset">Voltar ao total da fatura</button>':'')+'<button class="ghost" id="e-cancel">Cancelar</button></div>';
+  dlg.dataset.k='';dlg.dataset.id='';dlg.dataset.fat=b;if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','');var i=$('#f-v');i.focus();i.select()}
+function fatSalva(fn,msg){var y=window.scrollY;return mutate(S.ym,fn).then(function(){if(dlg.open)dlg.close();toast(msg);render();window.scrollTo(0,y)}).catch(function(){toast('Não foi possível salvar. Tente de novo.')})}
+function okFat(){var b=dlg.dataset.fat,v=parseValor($('#f-v').value);if(isNaN(v)||v<=0){$('#f-err').textContent='Informe o valor.';return}v=Math.round(v*100)/100;
+  fatSalva(function(d){d.fatAjuste=d.fatAjuste||{};d.fatAjuste[b]=v},'Previsão da fatura ajustada')}
+function lancaFat(b,btn){var ym=S.ym,f=fatAuto(ym).filter(function(x){return x.b===b})[0];if(!f||S.busy)return;btn.disabled=true;var hj=hojeISO(),it={id:uid(),d:f.d,c:'Cartão',b:'',v:f.v};if(hj.slice(0,7)===ym)it.dt=hj;
+  fatSalva(function(d){d.desp.push(it);d.fatPaga=d.fatPaga||{};d.fatPaga[b]=true},'Despesa lançada: '+f.d+' '+brl(f.v))}
+function ocultaFat(b,btn){if(!btn.dataset.sure){btn.dataset.sure='1';btn.classList.add('sure');btn.textContent='Tirar?';setTimeout(function(){if(btn.isConnected&&btn.dataset.sure){delete btn.dataset.sure;btn.classList.remove('sure');btn.innerHTML=ICDEL}},4000);return}
+  fatSalva(function(d){d.fatOculta=d.fatOculta||{};d.fatOculta[b]=true},'Previsão da fatura tirada deste mês')}
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-lfat],[data-ofat],[data-fat],#f-ok,#f-reset');if(!t||!S.ready)return;e.stopPropagation();e.preventDefault();
+  if(t.dataset.lfat)lancaFat(t.dataset.lfat,t);else if(t.dataset.ofat)ocultaFat(t.dataset.ofat,t);else if(t.id==='f-ok')okFat();
+  else if(t.id==='f-reset'){var b=dlg.dataset.fat;fatSalva(function(d){if(d.fatAjuste)delete d.fatAjuste[b]},'Previsão volta a seguir o total da fatura')}
+  else if(t.dataset.fat)abrirFat(t.dataset.fat)},true);
+document.addEventListener('keydown',function(e){if(e.key!=='Enter')return;if(e.target.id==='f-v'){e.preventDefault();okFat()}else if(e.target.dataset&&e.target.dataset.fat){e.preventDefault();abrirFat(e.target.dataset.fat)}});
+
+/* ---------- reembolsos como previsão automática ---------- */
+function reFaltas(ym){var d=doc(ym),g={},o=[],k=function(n){return (n||'').trim().toLowerCase()};
+  var add=function(n){var kk=k(n);if(!g[kk]){g[kk]={k:kk,pes:(n||'').trim(),tot:0,rec:0,cont:{}};o.push(kk)}return g[kk]};
+  reembMes(ym).forEach(function(r){var x=add(r.pes);x.tot+=r.v;if(r.pago)x.rec+=r.v;if(r.conta)x.cont[r.conta]=(x.cont[r.conta]||0)+r.v});
+  (d.reembRec||[]).forEach(function(p){add(p.pes).rec+=p.v});
+  return o.map(function(kk){var x=g[kk];x.falta=Math.round((x.tot-x.rec)*100)/100;x.conta=Object.keys(x.cont).sort(function(a,b){return x.cont[b]-x.cont[a]})[0]||'Nubank';return x})}
+function reAuto(ym){if(ym<HOJE_YM)return [];var d=doc(ym),aj=d.reAjuste||{},oc=d.reOculta||{};
+  return reFaltas(ym).filter(function(x){if(oc[x.k]||!(x.falta>0.004))return false;var pk=x.k;
+    return !d.prev.some(function(p){return p.t==='E'&&/reembolso/i.test(p.d||'')&&(p.d||'').toLowerCase().indexOf(pk)>=0})})
+    .map(function(x){x.v=aj[x.k]!=null?Math.min(aj[x.k],x.falta):x.falta;x.aj=aj[x.k]!=null;return x})}
+function reRows(ym){return reAuto(ym).map(function(x){
+  return '<div class="prow fat" tabindex="0" data-reprev="'+esc(x.k)+'"><span class="dot"></span><span class="nm"><b>Reembolso '+esc(x.pes)+'</b><i class="chip">'+(x.aj?'valor ajustado, falta '+brl(x.falta):'automático, o que falta receber')+'</i></span><span class="val in">+'+brl(x.v)+'</span>'+
+    '<button class="ghost lanca" data-lre="'+esc(x.k)+'" title="Registrar como recebido e lançar como receita">Lançar</button><button class="del" data-ore="'+esc(x.k)+'" aria-label="Tirar a previsão do reembolso de '+esc(x.pes)+' deste mês" title="Tirar deste mês">'+ICDEL+'</button></div>'}).join('')}
+function reAchar(k){return reAuto(S.ym).filter(function(x){return x.k===k})[0]}
+function abrirRePrev(k){var x=reAchar(k);if(!x)return;
+  dlg.innerHTML='<h2>Reembolso '+esc(x.pes)+'</h2><p class="hint" style="margin:0 0 .6rem">Previsão automática de '+esc(ymLabel(S.ym))+'. Falta receber '+brl(x.falta)+'. Se você espera receber só uma parte neste mês, altere o valor.</p>'+
+    '<div class="valor"><span>R$</span><input id="rp-v" inputmode="decimal" autocomplete="off" value="'+Number(x.v).toFixed(2).replace('.',',')+'" aria-label="Valor previsto"></div>'+
+    '<div class="err" id="rp-err"></div><div class="dlgbtns"><button class="primary" id="rp-ok">Salvar valor</button>'+(x.aj?'<button class="ghost" id="rp-reset">Voltar ao que falta</button>':'')+'<button class="ghost" id="e-cancel">Cancelar</button></div>';
+  dlg.dataset.k='';dlg.dataset.id='';dlg.dataset.re=k;if(dlg.showModal)dlg.showModal();else dlg.setAttribute('open','');var i=$('#rp-v');i.focus();i.select()}
+function okRePrev(){var k=dlg.dataset.re,v=parseValor($('#rp-v').value);if(isNaN(v)||v<=0){$('#rp-err').textContent='Informe o valor.';return}v=Math.round(v*100)/100;
+  fatSalva(function(d){d.reAjuste=d.reAjuste||{};d.reAjuste[k]=v},'Previsão do reembolso ajustada')}
+function lancaRe(k,btn){var x=reAchar(k);if(!x||S.busy)return;btn.disabled=true;var hj=hojeISO(),dt=hj.slice(0,7)===S.ym?hj:'',id=uid(),p={id:id,pes:x.pes,v:x.v,conta:x.conta},r={id:uid(),d:'Reembolso '+x.pes,t:'Reembolso',v:x.v,rr:id};
+  if(dt){p.dt=dt;r.dt=dt}p.recId=r.id;
+  fatSalva(function(d){d.reembRec=d.reembRec||[];d.reembRec.push(p);d.rec.push(r);if(d.reAjuste)delete d.reAjuste[k]},'Reembolso de '+x.pes+' recebido: '+brl(x.v))}
+function ocultaRe(k,btn){if(!btn.dataset.sure){btn.dataset.sure='1';btn.classList.add('sure');btn.textContent='Tirar?';setTimeout(function(){if(btn.isConnected&&btn.dataset.sure){delete btn.dataset.sure;btn.classList.remove('sure');btn.innerHTML=ICDEL}},4000);return}
+  fatSalva(function(d){d.reOculta=d.reOculta||{};d.reOculta[k]=true},'Previsão do reembolso tirada deste mês')}
+document.addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-lre],[data-ore],[data-reprev],#rp-ok,#rp-reset');if(!t||!S.ready)return;e.stopPropagation();e.preventDefault();
+  if(t.dataset.lre)lancaRe(t.dataset.lre,t);else if(t.dataset.ore)ocultaRe(t.dataset.ore,t);else if(t.id==='rp-ok')okRePrev();
+  else if(t.id==='rp-reset'){var k=dlg.dataset.re;fatSalva(function(d){if(d.reAjuste)delete d.reAjuste[k]},'Previsão volta a seguir o que falta receber')}
+  else if(t.dataset.reprev)abrirRePrev(t.dataset.reprev)},true);
+document.addEventListener('keydown',function(e){if(e.key!=='Enter')return;if(e.target.id==='rp-v'){e.preventDefault();okRePrev()}else if(e.target.dataset&&e.target.dataset.reprev){e.preventDefault();abrirRePrev(e.target.dataset.reprev)}});
 
 /* ---------- ações ---------- */
 function lancar(){
